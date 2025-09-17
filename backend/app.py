@@ -79,6 +79,7 @@ class State(TypedDict):
     validation_passed: bool  # lint 合格
     code_regen_count: int  # 再生成回数（初回生成は含めない）
     phase: str  # hearing | code_generation | code_validation | completed
+    requirement_summary: str  # ヒアリング要件サマリ（code_generation プロンプト用）
 
 
 class ChatMessage(BaseModel):
@@ -98,6 +99,7 @@ class ChatResponse(BaseModel):
     bicep_code: str = ""
     is_complete: bool = False
     phase: str = ""
+    requirement_summary: str = ""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -179,6 +181,7 @@ async def hearing(state: State):
         "lint_output": state.get("lint_output", ""),
         "validation_passed": state.get("validation_passed", False),
         "phase": "hearing",
+        "requirement_summary": state.get("requirement_summary", ""),
     }
 
 
@@ -205,23 +208,25 @@ def should_hear_again(state: State) -> str:
 
 async def code_generation(state: State):
     """Bicep コード生成 (lint 結果があれば考慮)"""
-    history = _history_from_state(state)
-    lint_output = state.get("lint_output")
-    if lint_output:
-        history.append({"role": "user", "content": f"直前 lint 結果を踏まえ修正してください:\n{lint_output[:1500]}"})
+    requirement_summary = state.get("requirement_summary") or "(要件サマリ未生成)"
+    lint_output = state.get("lint_output") or "(lint 結果なし)"
     prev_code_exists = bool(state.get("bicep_code"))
     regen_count = state.get("code_regen_count", 0) + (1 if prev_code_exists else 0)
+
     messages = [
         {
             "role": "system",
             "content": """
-あなたは優秀な Azure エンジニアです。上記の要件から最小で妥当な Bicep を出力します。
-説明は不要、```bicep ...``` のコードブロックのみで返してください。直前に lint 指摘があった場合は修正してください。
+あなたは熟練した Azure インフラエンジニアです。以下の『要件サマリ』と（存在すれば）『直近の lint 結果』のみを根拠に、最小で妥当かつ再利用しやすい Bicep コードを 1 ファイル分だけ提示してください。
+出力は説明を含めず、```bicep で始まるコードブロックのみです。以前の会話内容は参照できない前提で、要件サマリ内の情報だけで不足があれば合理的なデフォルトを仮定してください。
 """,
         },
-        *history,
-        {"role": "user", "content": "要件に基づいてBicepコードを生成してください。"},
+        {
+            "role": "user",
+            "content": f"""## 要件サマリ\n{requirement_summary}\n\n## 直近 lint 結果\n{lint_output[:1500]}\n\n上記を踏まえて Bicep コードを生成してください。説明・コメントは最小限（無くても良い）。コードブロックのみで返してください。""",
+        },
     ]
+
     resp = await llm.ainvoke(messages)
     text = _to_text(resp.content).strip()
     code_text = text
@@ -234,10 +239,64 @@ async def code_generation(state: State):
         "n_callings": state.get("n_callings", 0),
         "current_user_message": state.get("current_user_message", ""),
         "bicep_code": code_text,
-        "lint_output": "",
+        # lint_output は "最新の lint 結果" を保持し続ける（次回再生成プロンプトに活用）
+        "lint_output": state.get("lint_output", ""),
         "validation_passed": False,
         "code_regen_count": regen_count,
         "phase": "code_generation",
+        "requirement_summary": requirement_summary,
+    }
+
+
+async def summarize_requirements(state: State):
+    """ヒアリング会話全体から要件サマリを生成し state に格納する。"""
+    history = _history_from_state(state)
+    # 会話履歴を文字列化（長すぎる場合は適度にトリム）
+    joined = []
+    for h in history:
+        role = h.get("role")
+        content = h.get("content", "")
+        if role == "user":
+            joined.append(f"[USER] {content}")
+        elif role == "assistant":
+            joined.append(f"[ASSISTANT] {content}")
+    raw_dialogue = "\n".join(joined)
+    if len(raw_dialogue) > 8000:
+        raw_dialogue = raw_dialogue[-8000:]
+
+    messages = [
+        {
+            "role": "system",
+            "content": """
+あなたは Azure 向けインフラ要件の要約アシスタントです。これまでのヒアリング会話ログから、Bicep コード生成に必要な要件だけを抽出し、以下のセクション構成で簡潔にまとめてください。
+
+出力フォーマット:
+Purpose: ...
+Resources: 箇条書き (種類 / 個数 / SKU / 目的)
+Networking: VNet, Subnet, DNS, Public IP, NSG, Endpoint など
+Security: RBAC, KeyVault, Secrets, Encryption, NetworkRules など
+Scaling & Availability: スケール要件 / 可用性ゾーン / SLA 想定
+Constraints: 地域, ネーミング規則, コスト制約, タグ方針
+Other: 追加の注意点（無ければ 'None'）
+
+禁止事項: コード出力や余計な説明。""",
+        },
+        {
+            "role": "user",
+            "content": f"以下がヒアリング会話ログです。要件を抽出し指示フォーマットでまとめてください。\n\n{raw_dialogue}",
+        },
+    ]
+    resp = await llm.ainvoke(messages)
+    summary_text = _to_text(resp.content).strip()
+    if not summary_text:
+        summary_text = "(要約生成に失敗しました)"
+    # 要約そのものをユーザーに表示したいのでメッセージ本文に含める
+    display_msg = f"要件を集約しました。直ちにコード生成へ進みます。\n\n===== 要件サマリ =====\n{summary_text}"
+    return {
+        "messages": [{"role": "assistant", "content": display_msg}],
+        "requirement_summary": summary_text,
+        # 特別な中間フェーズ名を付け、フロント要求入力を待たず自動前進させるために chat_endpoint で判定
+        "phase": "summarizing",
     }
 
 
@@ -338,6 +397,7 @@ async def finalize_validation(state: State):
 def build_graph():
     gb = StateGraph(State)
     gb.add_node("hearing", hearing)
+    gb.add_node("summarize_requirements", summarize_requirements)
     gb.add_node("code_generation", code_generation)
     gb.add_node("code_validation", code_validation)
     gb.add_node("finalize_validation", finalize_validation)
@@ -346,8 +406,10 @@ def build_graph():
     gb.add_conditional_edges(
         "hearing",
         should_hear_again,
-        {"again": "hearing", "done": "code_generation"},
+        {"again": "hearing", "done": "summarize_requirements"},
     )
+    # 要約後にコード生成
+    gb.add_edge("summarize_requirements", "code_generation")
     gb.add_edge("code_generation", "code_validation")
     gb.add_conditional_edges(
         "code_validation", should_regenerate_code, {"regenerate": "code_generation", "ok": "finalize_validation"}
@@ -400,9 +462,9 @@ async def reset_conversation(session_id: Optional[str] = "default"):
     - 実運用はフロントで毎会話UUIDを割り当て、thread_idを変更するのが最も安全
     - ここでは messages, bicep_code などを空にする
     """
-    config = {"configurable": {"thread_id": session_id or "default"}}
-    GRAPH.update_state(
-        config,
+    config = {"configurable": {"thread_id": session_id or "default"}}  # type: ignore[assignment]
+    GRAPH.update_state(  # type: ignore[arg-type]
+        config,  # type: ignore[arg-type]
         {
             "messages": [],
             "bicep_code": "",
@@ -412,6 +474,7 @@ async def reset_conversation(session_id: Optional[str] = "default"):
             "validation_passed": False,
             "code_regen_count": 0,
             "phase": "hearing",
+            "requirement_summary": "",
         },
     )
     return {"message": f"会話({session_id})がリセットされました"}
@@ -430,29 +493,40 @@ async def chat_endpoint(request: ChatRequest):
     """
     try:
         session_id = request.session_id or "default"
-        config = {"configurable": {"thread_id": session_id}}
+        config = {"configurable": {"thread_id": session_id}}  # type: ignore[assignment]
 
         if DEBUG_LOG:
             print(f"[chat] session={session_id} message={request.message!r}")
 
         # ① Humanの発話を state に追加（ある場合のみ）
         if request.message:
-            GRAPH.update_state(
-                config,
+            GRAPH.update_state(  # type: ignore[arg-type]
+                config,  # type: ignore[arg-type]
                 {"messages": [{"role": "user", "content": request.message}]},
             )
 
-        # ② グラフを1ステップだけ前進
-        async for chunk in GRAPH.astream(None, config=config, stream_mode="updates"):
-            # 最初の更新で停止（1ステップのみ実行）
+        # ② 必要に応じて複数ステップ自動実行（summarize_requirements -> code_generation を一気に進める）
+        auto_progress_limit = 5
+        steps_executed = 0
+        while True:
+            steps_executed += 1
+            async for _chunk in GRAPH.astream(None, config=config, stream_mode="updates"):  # type: ignore[arg-type]
+                break
+            state = GRAPH.get_state(config).values  # type: ignore[arg-type]
+            phase_now = state.get("phase")
+            # summarizing フェーズはユーザー入力不要なので続行
+            if phase_now == "summarizing" and steps_executed < auto_progress_limit:
+                continue
+            # それ以外は 1 ステップで停止
             break
 
-        # ③ 現在stateを取得
-        state = GRAPH.get_state(config).values
+        # ③ 現在stateを取得（上の while ですでに取得済みだが明示的に変数保持）
+        state = GRAPH.get_state(config).values  # type: ignore[arg-type]
         msgs = state.get("messages", [])
         bicep = state.get("bicep_code") or ""
         passed = state.get("validation_passed")
         phase = state.get("phase", "")
+        requirement_summary = state.get("requirement_summary", "")
 
         # 直近のAI発話
         latest_ai_text = None
@@ -475,6 +549,7 @@ async def chat_endpoint(request: ChatRequest):
                 bicep_code=bicep or "",
                 is_complete=True,
                 phase=phase or ("completed" if passed else ""),
+                requirement_summary=requirement_summary,
             )
 
         # 継続（質問返し）
@@ -483,9 +558,10 @@ async def chat_endpoint(request: ChatRequest):
             bicep_code=bicep if (phase in ("code_generation", "code_validation") and bicep) else "",
             is_complete=False,
             phase=phase or ("code_generation" if bicep else "hearing"),
+            requirement_summary=requirement_summary,
         )
 
-    except Exception as e:
+    except Exception as e:  # noqa
         if DEBUG_LOG:
             print("[chat] ERROR:", repr(e))
         raise HTTPException(status_code=500, detail=f"エラーが発生しました: {str(e)}")
