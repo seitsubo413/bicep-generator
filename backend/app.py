@@ -209,22 +209,66 @@ def should_hear_again(state: State) -> str:
 async def code_generation(state: State):
     """Bicep コード生成 (lint 結果があれば考慮)"""
     requirement_summary = state.get("requirement_summary") or "(要件サマリ未生成)"
-    lint_output = state.get("lint_output") or "(lint 結果なし)"
-    prev_code_exists = bool(state.get("bicep_code"))
+    lint_output_full = state.get("lint_output") or "(lint 結果なし)"
+    previous_code = state.get("bicep_code", "")
+    prev_code_exists = bool(previous_code)
     regen_count = state.get("code_regen_count", 0) + (1 if prev_code_exists else 0)
 
+    # 大きすぎる入力はトリム（LLM のトークン節約）
+    lint_output = lint_output_full[:3000]
+    truncated_note = ""
+    if len(lint_output_full) > len(lint_output):
+        truncated_note = "\n(※ lint 出力は長いため一部のみ使用)"
+
+    prev_code_section = ""
+    if prev_code_exists:
+        # 旧コードも長過ぎればトリム
+        prev_code_for_prompt = previous_code
+        max_prev_len = 8000
+        if len(prev_code_for_prompt) > max_prev_len:
+            prev_code_for_prompt = prev_code_for_prompt[-max_prev_len:]
+            prev_code_section = (
+                "## 直近生成コード (末尾" + str(max_prev_len) + "文字)\n```bicep\n" + prev_code_for_prompt + "\n```\n"
+            )
+        else:
+            prev_code_section = f"## 直近生成コード\n```bicep\n{prev_code_for_prompt}\n```\n"
+
+    # 初回と再生成で system プロンプトを少し分岐
+    if not prev_code_exists:
+        system_prompt = (
+            "あなたは熟練した Azure インフラエンジニアです。以下の『要件サマリ』と（存在すれば）『直近の lint 結果』のみを根拠に、"
+            "最小で妥当かつ再利用しやすい Bicep コードを 1 ファイル分だけ提示してください。"
+            "出力は説明を含めず、```bicep で始まるコードブロックのみです。以前の会話内容は参照できない前提で、要件サマリ内の情報だけで不足があれば合理的なデフォルトを仮定してください。"
+        )
+    else:
+        system_prompt = (
+            "あなたは熟練した Azure インフラエンジニアです。これから提示する『既存コード』と『lint 結果』を精査し、"
+            "致命的/重要な問題を解消しつつ、不要なリソース追加や過剰最適化を避けて Bicep コードを改良してください。"
+            "次の原則を必ず守ってください:\n"
+            "1. 既存コードで既に妥当な部分は極力変更しない（diff を最小化）。\n"
+            "2. lint / 要件サマリに基づく不足のみを補う。推測が必要な場合は最小構成で仮定。\n"
+            "3. 出力はコードブロックのみ（説明・コメントは問題箇所への最小限のコメント以外不要）。\n"
+            "4. 変更加筆が必須でない限りリソース名やパラメータ名を再命名しない。"
+        )
+
+    user_prompt_parts = [
+        f"## 要件サマリ\n{requirement_summary}",
+    ]
+    if prev_code_section:
+        user_prompt_parts.append(prev_code_section)
+    user_prompt_parts.append(f"## 直近 lint 結果\n{lint_output}{truncated_note}")
+    if prev_code_exists:
+        user_prompt_parts.append(
+            "## 指示\n上記を踏まえて最小修正で改良後の完全な Bicep コード全体を再掲してください。コードブロックのみで返してください。"
+        )
+    else:
+        user_prompt_parts.append(
+            "## 指示\n上記を踏まえて Bicep コードを初回生成してください。説明・コメントは最小限（無くても良い）。コードブロックのみで返してください。"
+        )
+
     messages = [
-        {
-            "role": "system",
-            "content": """
-あなたは熟練した Azure インフラエンジニアです。以下の『要件サマリ』と（存在すれば）『直近の lint 結果』のみを根拠に、最小で妥当かつ再利用しやすい Bicep コードを 1 ファイル分だけ提示してください。
-出力は説明を含めず、```bicep で始まるコードブロックのみです。以前の会話内容は参照できない前提で、要件サマリ内の情報だけで不足があれば合理的なデフォルトを仮定してください。
-""",
-        },
-        {
-            "role": "user",
-            "content": f"""## 要件サマリ\n{requirement_summary}\n\n## 直近 lint 結果\n{lint_output[:1500]}\n\n上記を踏まえて Bicep コードを生成してください。説明・コメントは最小限（無くても良い）。コードブロックのみで返してください。""",
-        },
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "\n\n".join(user_prompt_parts)},
     ]
 
     resp = await llm.ainvoke(messages)
@@ -233,7 +277,11 @@ async def code_generation(state: State):
     m = re.search(r"```(?:bicep)?\s*\n([\s\S]*?)```", text, flags=re.IGNORECASE)
     if m:
         code_text = m.group(1).strip()
-    done_msg = "Bicepコードを生成しました。lint 検証に進みます。"
+    done_msg = (
+        "Bicepコードを生成しました。lint 検証に進みます。"
+        if not prev_code_exists
+        else "Bicepコードを改良しました。lint 再検証に進みます。"
+    )
     return {
         "messages": [{"role": "assistant", "content": done_msg}],
         "n_callings": state.get("n_callings", 0),
