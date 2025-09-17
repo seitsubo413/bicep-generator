@@ -39,12 +39,14 @@ export default function CodeEditorWithChat() {
   const [isLoading, setIsLoading] = useState(false)
   const [isConversationComplete, setIsConversationComplete] = useState(false)
   const API_BASE_URL = "http://localhost:8000"
+  // 1セッションで固定のsession_idを生成
+  const sessionIdRef = useRef<string>(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2))
 
   const sendMessageToAPI = async (message: string): Promise<ChatResponse> => {
     const response = await fetch(`${API_BASE_URL}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ session_id: sessionIdRef.current, message }),
     })
     if (!response.ok) throw new Error(`API Error: ${response.status}`)
     return response.json()
