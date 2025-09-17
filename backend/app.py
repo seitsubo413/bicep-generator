@@ -18,10 +18,12 @@ SqliteSaver = None
 MemorySaver = None
 try:
     from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
+
     SqliteSaver = _SqliteSaver
 except Exception:
     try:
         from langgraph.checkpoint.memory import MemorySaver as _MemorySaver
+
         MemorySaver = _MemorySaver
     except Exception:
         pass
@@ -59,6 +61,7 @@ llm = AzureChatOpenAI(
     api_version=OPENAI_API_VERSION,
 )
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # State / I/O モデル
 # ──────────────────────────────────────────────────────────────────────────────
@@ -68,20 +71,24 @@ class State(TypedDict):
     current_user_message: str
     bicep_code: str  # 完了時に格納（判定に使う）
 
+
 class ChatMessage(BaseModel):
     content: str
     sender: str
     timestamp: Optional[str] = None  # 使わない場合は省略可
 
+
 class ChatRequest(BaseModel):
     session_id: Optional[str] = "default"  # フロントから会話IDを渡すのが推奨
-    message: Optional[str] = None          # 空の場合は「AIの次のステップだけ」進める
+    message: Optional[str] = None  # 空の場合は「AIの次のステップだけ」進める
     conversation_history: List[ChatMessage] = []  # 未使用（保持はcheckpointerに任せる）
+
 
 class ChatResponse(BaseModel):
     message: str
     bicep_code: str = ""
     is_complete: bool = False
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ノード定義（プロンプトはそのまま）
@@ -101,8 +108,11 @@ async def hearing(state: State):
         elif isinstance(msg, str):
             history.append({"role": "assistant", "content": msg})
 
-    messages = [
-        {"role": "system", "content": """
+    messages = (
+        [
+            {
+                "role": "system",
+                "content": """
              ## 役割
              あなたは優秀な要件ヒアリング担当者です。ユーザーの要件を深掘りして、必要な情報を引き出すための質問を生成するのがあなたの役割です。
              
@@ -111,10 +121,17 @@ async def hearing(state: State):
              
              ## 考え方
              まだ、背景が明確になっていない場合には、まずは背景を明確にするための質問をしてください。
-             """}
-    ] + history + [
-        {"role": "user", "content": "ユーザーの要件を深掘りするための質問をしてください。ただし、質問は一つだけにしてください。分量は短く、簡潔にしてください。"}
-    ]
+             """,
+            }
+        ]
+        + history
+        + [
+            {
+                "role": "user",
+                "content": "ユーザーの要件を深掘りするための質問をしてください。ただし、質問は一つだけにしてください。分量は短く、簡潔にしてください。",
+            }
+        ]
+    )
     resp = await llm.ainvoke(messages)
     question = (resp.content or "").strip() or "要件をもう少し教えてください。"
     return {
@@ -123,6 +140,7 @@ async def hearing(state: State):
         "current_user_message": state.get("current_user_message", ""),
         "bicep_code": state.get("bicep_code", ""),
     }
+
 
 def should_hear_again(state: State) -> str:
     """ヒアリング継続判定: 'done' or 'again' を返す（同期関数）"""
@@ -138,14 +156,19 @@ def should_hear_again(state: State) -> str:
         elif isinstance(msg, str):
             history.append({"role": "assistant", "content": msg})
 
-    messages = [
-        {"role": "system", "content": """
+    messages = (
+        [
+            {
+                "role": "system",
+                "content": """
 あなたは、Azure環境を誰が作っても9割同じになる程度に要件が満ちたか判定します。
 満ちていれば 'done'、不足していれば 'again'。回答は 'done' または 'again' のみ。
-"""}
-    ] + history + [
-        {"role": "user", "content": "要件は十分ですか？ 'done' か 'again' で答えてください。"}
-    ]
+""",
+            }
+        ]
+        + history
+        + [{"role": "user", "content": "要件は十分ですか？ 'done' か 'again' で答えてください。"}]
+    )
 
     # guard: ヒアリング上限
     if state.get("n_callings", 0) >= 10:
@@ -155,6 +178,7 @@ def should_hear_again(state: State) -> str:
     resp = llm.invoke(messages)
     ans = (resp.content or "").strip().lower()
     return "done" if "done" in ans else "again"
+
 
 async def code_generation(state: State):
     """Bicep コード生成"""
@@ -170,14 +194,19 @@ async def code_generation(state: State):
         elif isinstance(msg, str):
             history.append({"role": "assistant", "content": msg})
 
-    messages = [
-        {"role": "system", "content": """
+    messages = (
+        [
+            {
+                "role": "system",
+                "content": """
 あなたは優秀な Azure エンジニアです。上記の要件から最小のBicepを出力します。
 説明は不要、```bicep ...``` のコードブロックで返してください。
-"""}
-    ] + history + [
-        {"role": "user", "content": "要件に基づいてBicepコードを生成してください。"}
-    ]
+""",
+            }
+        ]
+        + history
+        + [{"role": "user", "content": "要件に基づいてBicepコードを生成してください。"}]
+    )
 
     resp = await llm.ainvoke(messages)
     text = (resp.content or "").strip()
@@ -194,6 +223,7 @@ async def code_generation(state: State):
         "current_user_message": state.get("current_user_message", ""),
         "bicep_code": code_text,  # 完了の印
     }
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # グラフ構築（checkpointer 付き：SQLite → 無ければ Memory に自動フォールバック）
@@ -224,7 +254,9 @@ def build_graph():
 
     return gb.compile(checkpointer=checkpointer)
 
+
 GRAPH = build_graph()
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ルーティング
@@ -233,9 +265,11 @@ GRAPH = build_graph()
 async def root():
     return {"message": "Bicep Generator API is running"}
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "bicep-generator-api"}
+
 
 @app.get("/config")
 async def get_config():
@@ -244,6 +278,7 @@ async def get_config():
         "azure_openai_deployment": AZURE_OPENAI_DEPLOYMENT,
         "openai_api_version": OPENAI_API_VERSION,
     }
+
 
 @app.post("/reset")
 async def reset_conversation(session_id: Optional[str] = "default"):
@@ -258,6 +293,7 @@ async def reset_conversation(session_id: Optional[str] = "default"):
         {"messages": [], "bicep_code": "", "n_callings": 0, "current_user_message": ""},
     )
     return {"message": f"会話({session_id})がリセットされました"}
+
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
@@ -328,10 +364,12 @@ async def chat_endpoint(request: ChatRequest):
             print("[chat] ERROR:", repr(e))
         raise HTTPException(status_code=500, detail=f"エラーが発生しました: {str(e)}")
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # dev run
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
+
     # Windows環境では明示的にlocalhostを指定すると楽
     uvicorn.run(app, host="127.0.0.1", port=8000)
