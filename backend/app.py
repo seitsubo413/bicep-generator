@@ -38,6 +38,7 @@ AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION")
 
 DEBUG_LOG = os.getenv("DEBUG_LOG", "0") in ("1", "true", "True")
+MAX_HEARING_CALLS = int(os.getenv("MAX_HEARING_CALLS", "20"))  # ヒアリングの最大回数
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FastAPI 初期化 & CORS
@@ -171,7 +172,7 @@ def should_hear_again(state: State) -> str:
     )
 
     # guard: ヒアリング上限
-    if state.get("n_callings", 0) >= 10:
+    if state.get("n_callings", 0) >= MAX_HEARING_CALLS:
         return "done"
 
     # 同期的なLLM呼び出し
