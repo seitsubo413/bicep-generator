@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import tempfile
 import subprocess
 from typing import List, Dict, Any, Annotated, TypedDict, Optional
@@ -97,9 +98,12 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     message: str
     bicep_code: str = ""
-    is_complete: bool = False
     phase: str = ""
     requirement_summary: str = ""
+    # フロントエンドが次のユーザー入力を待つ必要があるか（True=待つ）
+    # hearing フェーズの質問などユーザー回答が必要な場面で True
+    # 自動で次ステップに進めたい中間メッセージ（要件サマリ表示、コード生成完了、lint 結果表示 等）は False
+    requires_user_input: bool = True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -159,10 +163,10 @@ async def hearing(state: State):
              あなたは優秀な要件ヒアリング担当者です。ユーザーの要件を深掘りして、必要な情報を引き出すための質問を生成するのがあなたの役割です。
              
              ## 目的
-             ユーザーは、最終的に Azure 上に環境を構築しようとしています。ヒアリング項目はあくまでも、Azure 上に環境を構築するために必要な情報に限定してください。
+             ユーザーは、最終的に Azure 上に環境を構築しようとしています。ヒアリング項目はあくまでも、Azure 上に環境を構築するための bicep コード生成に必要な情報に限定してください。
              
              ## 考え方
-             まだ、背景が明確になっていない場合には、まずは背景を明確にするための質問をしてください。
+             まだ背景が明確になっていない場合には、まずは背景を明確にするための質問をしてください。
              """,
         },
         *history,
@@ -186,24 +190,24 @@ async def hearing(state: State):
 
 
 def should_hear_again(state: State) -> str:
-    """ヒアリング継続判定: 'done' or 'again' を返す（同期関数）"""
+    """ヒアリング継続判定: 'yes' or 'no' を返す（同期関数）"""
     history = _history_from_state(state)
     messages = [
         {
             "role": "system",
             "content": """
 あなたは、Azure環境を誰が作っても9割同じになる程度に要件が満ちたか判定します。
-満ちていれば 'done'、不足していれば 'again'。回答は 'done' または 'again' のみ。
+要件が足りておらずヒアリングを続けるべきなら 'yes'、充足していれば 'no'。回答は 'yes' または 'no' のみ。
 """,
         },
         *history,
-        {"role": "user", "content": "要件は十分ですか？ 'done' か 'again' で答えてください。"},
+        {"role": "user", "content": "要件ヒアリングを続けるべきですか？ 'yes' か 'no' で答えてください。"},
     ]
     if state.get("n_callings", 0) >= MAX_HEARING_CALLS:
-        return "done"
+        return "no"
     resp = llm.invoke(messages)
     ans = _to_text(resp.content).strip().lower()
-    return "done" if "done" in ans else "again"
+    return "yes" if "yes" in ans else "no"
 
 
 async def code_generation(state: State):
@@ -271,6 +275,9 @@ async def code_generation(state: State):
         {"role": "user", "content": "\n\n".join(user_prompt_parts)},
     ]
 
+    if DEBUG_LOG:
+        print("[code generation prompt]", messages)
+
     resp = await llm.ainvoke(messages)
     text = _to_text(resp.content).strip()
     code_text = text
@@ -287,7 +294,6 @@ async def code_generation(state: State):
         "n_callings": state.get("n_callings", 0),
         "current_user_message": state.get("current_user_message", ""),
         "bicep_code": code_text,
-        # lint_output は "最新の lint 結果" を保持し続ける（次回再生成プロンプトに活用）
         "lint_output": state.get("lint_output", ""),
         "validation_passed": False,
         "code_regen_count": regen_count,
@@ -338,17 +344,25 @@ Other: 追加の注意点（無ければ 'None'）
     summary_text = _to_text(resp.content).strip()
     if not summary_text:
         summary_text = "(要約生成に失敗しました)"
-    # 要約そのものをユーザーに表示したいのでメッセージ本文に含める
-    display_msg = f"要件を集約しました。直ちにコード生成へ進みます。\n\n===== 要件サマリ =====\n{summary_text}"
+
+    if DEBUG_LOG:
+        print("[requirement summary]", summary_text)
+
+    display_msg = f"要件を集約しました。コード生成へ進みます。\n\n===== 要件サマリ =====\n{summary_text}"
     return {
         "messages": [{"role": "assistant", "content": display_msg}],
         "requirement_summary": summary_text,
-        # 特別な中間フェーズ名を付け、フロント要求入力を待たず自動前進させるために chat_endpoint で判定
         "phase": "summarizing",
     }
 
 
 async def code_validation(state: State):
+
+    def get_bicep_command() -> str:
+        if shutil.which("az") is not None:
+            return "az bicep"
+        return "bicep"
+
     code = state.get("bicep_code", "")
     if not code:
         return {
@@ -356,6 +370,7 @@ async def code_validation(state: State):
             "lint_output": "(no code)",
             "validation_passed": False,
         }
+
     tmp_path = None
     output = ""
     try:
@@ -363,78 +378,92 @@ async def code_validation(state: State):
             f.write(code)
             tmp_path = f.name
         try:
+            bicep_cmd = get_bicep_command()
             proc = subprocess.run(
-                " ".join(["az", "bicep", "lint", "--file", tmp_path]),
+                " ".join([bicep_cmd, "lint", "--file", tmp_path]),
                 capture_output=True,
                 text=True,
                 timeout=60,
                 shell=True,
             )
-            output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+            lint_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
         except FileNotFoundError:
-            output = "Azure CLI が見つかりません。Azure CLI と Bicep 拡張のインストールを確認してください。"
+            lint_output = "bicep コマンドが見つかりません。Azure CLI や Bicep 拡張のインストールを確認してください。"
         except subprocess.TimeoutExpired:
-            output = "az bicep lint がタイムアウトしました。"
+            lint_output = "az bicep lint がタイムアウトしました。"
         except Exception as e:  # noqa
-            output = f"lint 実行エラー: {e}"
+            lint_output = f"lint 実行エラー: {e}"
     finally:
         if tmp_path:
             try:
                 os.unlink(tmp_path)
             except Exception:
                 pass
-    print("[lint output]", output)  # for debug
-    preview = output.strip()
-    if len(preview) > 1200:
-        preview = preview[:1200] + "... (truncated)"
+    if DEBUG_LOG:
+        print("[code_validation] lint_output:", lint_output)
+    lint_output_preview = lint_output.strip()
+    if len(lint_output_preview) > 1200:
+        lint_output_preview = lint_output_preview[:1200] + "... (truncated)"
+
+    # バリデーションの判定
+    # LLM に判定させるやり方も試したが、単純に error/failed の有無で判定するので問題ないと判断した
+    #
+    # validation_passed = False
+    # messages = [
+    #     {
+    #         "role": "system",
+    #         "content": "あなたは Bicep コードの品質ゲート判定者です。Lint 結果を見て、致命的または重要な問題があって再度コード修正の必要がある場合は 'failed'、無ければ 'passed' で答えてください。回答は 'failed' または 'passed' のみ。",
+    #     },
+    #     {
+    #         "role": "user",
+    #         "content": f"""## Lint Output\n{lint_output}\n""",
+    #     },
+    # ]
+    # try:
+    #     resp = llm.invoke(messages)
+    #     answer = _to_text(resp.content).strip().lower()
+    #     if "passed" in answer:
+    #         validation_passed = True
+    # except Exception:
+    #     pass
+    validation_passed = not bool(re.search(r"\b(error|warning)\b", lint_output, flags=re.IGNORECASE))
+
+    message = f"lint 結果:\n==========\n{lint_output_preview}\n"
     return {
-        "messages": [{"role": "assistant", "content": f"lint 結果:\n{preview}\n再生成が必要か判定します。"}],
-        "lint_output": output,
-        "validation_passed": False,
+        "messages": [{"role": "assistant", "content": message}],
+        "lint_output": lint_output,
+        "validation_passed": validation_passed,
         "phase": "code_validation",
     }
 
 
 def should_regenerate_code(state: State) -> str:
     code = state.get("bicep_code", "")
-    lint_output = state.get("lint_output", "")
-    # 上限到達で強制終了
-    if state.get("code_regen_count", 0) >= MAX_REGEN_CALLS:
-        return "ok"
     if not code:
-        return "regenerate"
-    messages = [
-        {
-            "role": "system",
-            "content": """
-あなたは Bicep の品質ゲート判定者です。致命的または重要な問題があれば 'regenerate'、無ければ 'ok' のみで答えてください。""",
-        },
-        {
-            "role": "user",
-            "content": f"""## Code\n```bicep\n{code}\n```\n\n## Lint Output\n{lint_output}\n""",
-        },
-    ]
-    try:
-        resp = llm.invoke(messages)
-        answer = _to_text(resp.content).strip().lower()
-        return "regenerate" if "regenerate" in answer else "ok"
-    except Exception:
-        return "regenerate"
+        return "yes"
+
+    if state.get("code_regen_count", 0) >= MAX_REGEN_CALLS:
+        return "no"
+
+    return "yes" if not state.get("validation_passed", False) else "no"
 
 
 async def finalize_validation(state: State):
     regen_count = state.get("code_regen_count", 0)
-    lint_output = state.get("lint_output", "")
-    base_msg = "Bicepコードは lint 検証を通過しました。"
-    if regen_count >= MAX_REGEN_CALLS:
-        base_msg = (
-            "自動再生成の上限 (MAX_REGEN_CALLS) に達したため処理を終了しました。"
-            " なお、残存する警告/エラーがある場合は手動で修正してください。"
-        )
+    validation_passed = state.get("validation_passed", False)
+
+    def get_message():
+        if validation_passed:
+            return "Bicep コードは検証を通過しました。出力されたコードをご利用ください！"
+        if regen_count >= MAX_REGEN_CALLS:
+            return (
+                "自動再生成の上限 (MAX_REGEN_CALLS) に達したため処理を終了しました。"
+                " 残存する警告/エラーがある場合は手動で修正してください。"
+            )
+        return "検証をパスしていませんが、処理を終了します。適宜、手動で修正してご利用ください。"
+
     return {
-        "messages": [{"role": "assistant", "content": base_msg}],
-        "validation_passed": True,
-        "lint_output": lint_output,
+        "messages": [{"role": "assistant", "content": get_message()}],
         "phase": "completed",
     }
 
@@ -454,13 +483,12 @@ def build_graph():
     gb.add_conditional_edges(
         "hearing",
         should_hear_again,
-        {"again": "hearing", "done": "summarize_requirements"},
+        {"yes": "hearing", "no": "summarize_requirements"},
     )
-    # 要約後にコード生成
     gb.add_edge("summarize_requirements", "code_generation")
     gb.add_edge("code_generation", "code_validation")
     gb.add_conditional_edges(
-        "code_validation", should_regenerate_code, {"regenerate": "code_generation", "ok": "finalize_validation"}
+        "code_validation", should_regenerate_code, {"yes": "code_generation", "no": "finalize_validation"}
     )
     gb.set_finish_point("finalize_validation")
 
@@ -553,19 +581,23 @@ async def chat_endpoint(request: ChatRequest):
                 {"messages": [{"role": "user", "content": request.message}]},
             )
 
-        # ② 必要に応じて複数ステップ自動実行（summarize_requirements -> code_generation を一気に進める）
-        auto_progress_limit = 5
+        # ② 必要に応じて複数ステップ自動実行する
         steps_executed = 0
         while True:
             steps_executed += 1
+
+            # ループ防止のため最大ステップ数を設定
+            if steps_executed > 10:
+                if DEBUG_LOG:
+                    print("[chat] Max steps executed, breaking loop")
+                break
+
+            state = GRAPH.get_state(config).values  # type: ignore[arg-type]
+            if DEBUG_LOG:
+                print(f"[chat] step {steps_executed} phase={state.get('phase')} calls={state.get('n_callings')}")
+
             async for _chunk in GRAPH.astream(None, config=config, stream_mode="updates"):  # type: ignore[arg-type]
                 break
-            state = GRAPH.get_state(config).values  # type: ignore[arg-type]
-            phase_now = state.get("phase")
-            # summarizing フェーズはユーザー入力不要なので続行
-            if phase_now == "summarizing" and steps_executed < auto_progress_limit:
-                continue
-            # それ以外は 1 ステップで停止
             break
 
         # ③ 現在stateを取得（上の while ですでに取得済みだが明示的に変数保持）
@@ -590,23 +622,28 @@ async def chat_endpoint(request: ChatRequest):
                 latest_ai_text = m
                 break
 
-        if phase == "completed" or (bicep and passed):
-            # 検証完了後
-            return ChatResponse(
-                message=latest_ai_text or "Bicepコードの生成が完了しました！",
-                bicep_code=bicep or "",
-                is_complete=True,
-                phase=phase or ("completed" if passed else ""),
-                requirement_summary=requirement_summary,
-            )
-
-        # 継続（質問返し）
+        # requires_user_input 判定
+        # True: ユーザーの回答待ちが必要なとき (主に hearing の質問)
+        # False: 自動で次ステップへ進めたい中間状態
+        # completed は自動前進させないが、ユーザー入力も不要なので False
+        auto_progress_phases = {"summarizing", "code_generation", "code_validation"}
+        requires_user_input = True
+        if phase in auto_progress_phases:
+            requires_user_input = False
+        if phase == "completed":
+            requires_user_input = False
+        is_complete = bool((phase == "completed") or bool(passed))
+        normalized_phase = phase or ("completed" if is_complete else ("code_generation" if bicep else "hearing"))
+        # 完了時メッセージのデフォルト
+        default_msg = "Bicepコードの生成が完了しました！" if is_complete else "次の質問を用意しています…"
         return ChatResponse(
-            message=latest_ai_text or "次の質問を用意しています…",
-            bicep_code=bicep if (phase in ("code_generation", "code_validation") and bicep) else "",
-            is_complete=False,
-            phase=phase or ("code_generation" if bicep else "hearing"),
+            message=latest_ai_text or default_msg,
+            bicep_code=(
+                bicep if (bicep and normalized_phase in ("code_generation", "code_validation", "completed")) else ""
+            ),
+            phase=normalized_phase,
             requirement_summary=requirement_summary,
+            requires_user_input=requires_user_input,
         )
 
     except Exception as e:  # noqa
