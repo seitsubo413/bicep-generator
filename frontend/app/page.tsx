@@ -187,6 +187,23 @@ export default function CodeEditorWithChat() {
   // クリップボードにコードをコピー
   const copyToClipboard = () => navigator.clipboard.writeText(code)
 
+  // Bicep コードを main.bicep としてダウンロード
+  const downloadBicep = () => {
+    try {
+      const blob = new Blob([code ?? ""], { type: "text/plain;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "main.bicep"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error("Failed to download bicep file", e)
+    }
+  }
+
   // リサイズ処理
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -285,7 +302,13 @@ export default function CodeEditorWithChat() {
               <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2" onClick={copyToClipboard} title="コードをクリップボードにコピー">
                 <Copy className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted hover:text-app hover-bg-surface-2"
+                onClick={downloadBicep}
+                title="Bicep コードをダウンロード"
+              >
                 <Save className="h-4 w-4" />
               </Button>
               <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2">
