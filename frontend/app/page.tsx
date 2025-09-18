@@ -18,11 +18,12 @@ interface Message {
 interface ChatResponse {
   message: string
   bicep_code?: string
-  is_complete: boolean
+  phase?: string // 現在の会話フェーズ
+  requires_user_input?: boolean // ユーザー入力待ちかどうか
 }
 
 export default function CodeEditorWithChat() {
-  const [chatWidth, setChatWidth] = useState(320)
+  const [chatWidth, setChatWidth] = useState(440)
   const [isResizing, setIsResizing] = useState(false)
   const resizeRef = useRef<HTMLDivElement>(null)
   const [code, setCode] = useState(`// Bicep template will appear here when generated from chat
@@ -37,7 +38,14 @@ export default function CodeEditorWithChat() {
   ])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [isConversationComplete, setIsConversationComplete] = useState(false)
+  // 完了判定は phase === 'completed' を利用
+  const [isSystemAdvancing, setIsSystemAdvancing] = useState(false)
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true)
+  const [phase, setPhase] = useState<string>("hearing")
+  // 共通利用するフェーズ判定用定数/関数
+  const PHASE_COMPLETED = 'completed' as const
+  const isCompletedPhase = (p?: string) => p === PHASE_COMPLETED
+  const autoAdvanceLoopRef = useRef<number>(0)
   const API_BASE_URL = "http://localhost:8000"
   // 1セッションで固定のsession_idを生成
   const sessionIdRef = useRef<string>(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2))
@@ -52,6 +60,54 @@ export default function CodeEditorWithChat() {
     return response.json()
   }
 
+  const appendAssistantMessage = (response: ChatResponse) => {
+    const aiMessage: Message = {
+      id: (Date.now() + Math.random()).toString(),
+      content: response.message,
+      sender: "assistant",
+      timestamp: new Date(),
+      bicepCode: response.bicep_code,
+    }
+    setMessages(prev => [...prev, aiMessage])
+  }
+
+  const processChatResponse = (response: ChatResponse) => {
+    appendAssistantMessage(response)
+    if (response.phase) setPhase(response.phase)
+    if (response.bicep_code) setCode(response.bicep_code)
+    // セッションの終了判定
+    const completed = isCompletedPhase(response.phase)
+    if (completed) {
+      setPhase(PHASE_COMPLETED)
+      setIsSystemAdvancing(false)
+      return
+    }
+    // 次回のユーザー入力をスキップするかの判定
+    const shouldAutoAdvance = autoAdvanceEnabled && response.requires_user_input === false
+    if (shouldAutoAdvance) {
+      if (autoAdvanceLoopRef.current < 30) {
+        autoAdvanceLoopRef.current += 1
+        setIsSystemAdvancing(true)
+        setTimeout(() => advanceOneStep(), 400)
+      } else {
+        setIsSystemAdvancing(false)
+      }
+    } else {
+      setIsSystemAdvancing(false)
+    }
+  }
+
+  const advanceOneStep = async () => {
+    if (isCompletedPhase(phase)) return
+    try {
+      const resp = await sendMessageToAPI("")
+      processChatResponse(resp)
+    } catch (e) {
+      console.error("Auto advance error", e)
+      setIsSystemAdvancing(false)
+    }
+  }
+
   const resetConversation = async () => {
     try {
       await fetch(`${API_BASE_URL}/reset`, { method: "POST" })
@@ -62,7 +118,7 @@ export default function CodeEditorWithChat() {
         timestamp: new Date(),
       }])
       setCode(`// Bicep template will appear here when generated from chat`)
-      setIsConversationComplete(false)
+    setPhase("hearing")
     } catch (error) {
       console.error("Failed to reset conversation:", error)
     }
@@ -70,6 +126,9 @@ export default function CodeEditorWithChat() {
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return
+    // ユーザー介入時は自動進行ループをリセット
+    autoAdvanceLoopRef.current = 0
+    setIsSystemAdvancing(false)
     const newMessage: Message = {
       id: Date.now().toString(),
       content: inputMessage,
@@ -82,16 +141,7 @@ export default function CodeEditorWithChat() {
     setIsLoading(true)
     try {
       const response = await sendMessageToAPI(userRequest)
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        content: response.message,
-        sender: "assistant",
-        timestamp: new Date(),
-        bicepCode: response.bicep_code,
-      }
-      setMessages((prev) => [...prev, aiResponse])
-      if (response.bicep_code) setCode(response.bicep_code)
-      if (response.is_complete) setIsConversationComplete(true)
+      processChatResponse(response)
     } catch (error) {
       console.error("Error sending message:", error)
       const errorResponse: Message = {
@@ -137,8 +187,35 @@ export default function CodeEditorWithChat() {
       <div className="flex flex-col bg-slate-800 border-r border-slate-700 min-w-0" style={{ width: `${chatWidth}px` }}>
         <div className="h-12 bg-slate-700 border-b border-slate-600 flex items-center px-4 justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+            <div className={`w-2 h-2 rounded-full ${isSystemAdvancing ? "bg-amber-400 animate-pulse" : isCompletedPhase(phase) ? "bg-green-500" : "bg-green-400"}`}></div>
             <span className="text-sm font-medium text-slate-200">Bicep AI Assistant</span>
+            <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-slate-600 text-slate-200 uppercase tracking-wide">
+              {
+              /*
+              {(() => {
+                switch (phase) {
+                  case "hearing": return "Hearing"
+                  case "summarizing": return "Summarizing"
+                  case "code_generation": return "Generating"
+                  case "code_validation": return "Linting"
+                  case "completed": return "Completed"
+                  default: return phase || "";
+                }
+              })()}
+              */
+              phase
+              }
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            {isSystemAdvancing && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setIsSystemAdvancing(false); autoAdvanceLoopRef.current = 0; setAutoAdvanceEnabled(false) }}
+                className="text-[10px] px-2 py-1 text-slate-300 hover:text-white hover:bg-slate-600"
+              >停止</Button>
+            )}
           </div>
           <Button variant="ghost" size="sm" onClick={resetConversation} className="text-slate-400 hover:text-slate-200 hover:bg-slate-600" title="会話をリセット">
             <RotateCcw className="h-4 w-4" />
@@ -153,12 +230,12 @@ export default function CodeEditorWithChat() {
                 </div>
               </div>
             ))}
-            {isLoading && (
+            {(isLoading || isSystemAdvancing) && (
               <div className="flex justify-start">
                 <div className="bg-slate-700 text-slate-200 rounded-lg px-3 py-2 text-sm">
                   <div className="flex items-center gap-2">
                     <div className="animate-pulse"></div>
-                    <span>AI が考えています...</span>
+                    <span>AI が{isSystemAdvancing ? "自動で処理中" : "考えています"}...</span>
                   </div>
                 </div>
               </div>
@@ -172,15 +249,15 @@ export default function CodeEditorWithChat() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={isConversationComplete ? "会話が完了しました。リセットして新しい会話を開始してください。" : "Azureリソースを作成してください..."}
+              placeholder={isCompletedPhase(phase) ? "会話が完了しました。リセットして新しい会話を開始してください。" : "Azureリソースを作成してください..."}
               className="flex-1 bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-400"
-              disabled={isLoading || isConversationComplete}
+              disabled={isLoading || isCompletedPhase(phase)}
             />
-            <Button onClick={handleSendMessage} size="sm" className="bg-blue-600 hover:bg-blue-700" disabled={isLoading || isConversationComplete}>
+            <Button onClick={handleSendMessage} size="sm" className="bg-blue-600 hover:bg-blue-700" disabled={isLoading || isCompletedPhase(phase)}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
-          {isConversationComplete && (
+          {isCompletedPhase(phase) && (
             <p className="text-xs text-slate-400 mt-2">
               Bicepコードの生成が完了しました。新しいリソースを作成する場合は、右上のリセットボタンをクリックしてください。
             </p>
