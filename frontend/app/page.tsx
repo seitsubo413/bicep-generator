@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { CodeiumEditor } from "@codeium/react-code-editor";
 import { Send, Play, Save, FileText, Settings, Copy, RotateCcw } from "lucide-react"
 import { PHASE, isCompletedPhase } from "@/lib/phase"
 
@@ -273,20 +274,24 @@ export default function CodeEditorWithChat() {
           </div>
         </div>
         <div className="flex-1 flex min-w-0 overflow-hidden">
-          <div className="w-12 bg-slate-800 border-r border-slate-700 p-2 text-right">
-            <div className="font-mono text-xs text-slate-500 leading-6">
-              {code.split("\n").map((_, index) => (
-                <div key={index}>{index + 1}</div>
-              ))}
-            </div>
-          </div>
-          <div className="flex-1 relative min-w-0">
-            <textarea
+          <div className="flex-1 relative min-w-0 h-full">
+            {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+            {/* @ts-ignore */}
+            <CodeiumEditor
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full h-full p-4 bg-slate-900 text-slate-100 font-mono text-sm resize-none border-none outline-none leading-6 overflow-auto"
-              style={{ tabSize: 2, fontFamily: "var(--font-mono), monospace" }}
-              spellCheck={false}
+              onChange={(value?: string) => setCode(value ?? "")}
+              language={"bicep"}
+              className="h-full w-full p-0 bg-slate-900 text-slate-100 font-mono text-sm"
+              height={"100%"}
+              theme="vs-dark"
+              options={{
+                bracketPairColorization: { enabled: true },
+                fontSize: 16,
+                tabSize: 4,
+                fontFamily: "Consolas",
+                lineNumbers: "on",
+                minimap: { enabled: true },
+              }}
             />
           </div>
         </div>
