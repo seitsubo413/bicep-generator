@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { CodeiumEditor } from "@codeium/react-code-editor";
 import { Send, Play, Save, FileText, Settings, Copy, RotateCcw } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 import { PHASE, isCompletedPhase } from "@/lib/phase"
 import { useTheme } from 'next-themes'
 import ThemeToggle from "@/components/theme-toggle"
@@ -42,6 +43,7 @@ const generateSessionId = (): string => {
 
 export default function CodeEditorWithChat() {
   const { theme } = useTheme()
+  const { toast } = useToast()
   const editorTheme = theme === 'light' ? 'light' : 'vs-dark'
   const [chatWidth, setChatWidth] = useState(460)
   const [isResizing, setIsResizing] = useState(false)
@@ -204,6 +206,15 @@ export default function CodeEditorWithChat() {
     }
   }
 
+  // Play ボタン (未実装機能の通知)
+  const handleRun = () => {
+    toast({
+      title: "まだ未実装です",
+      description: "デプロイ / 実行機能は今後追加予定です。",
+      duration: 4000,
+    })
+  }
+
   // リサイズ処理
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -311,7 +322,13 @@ export default function CodeEditorWithChat() {
               >
                 <Save className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted hover:text-app hover-bg-surface-2"
+                onClick={handleRun}
+                title="Bicep をデプロイ (未実装)"
+              >
                 <Play className="h-4 w-4" />
               </Button>
               <ThemeToggle />

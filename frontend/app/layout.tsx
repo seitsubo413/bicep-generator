@@ -4,6 +4,7 @@ import { GeistMono } from 'geist/font/mono'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -23,6 +24,7 @@ export default function RootLayout({
           {children}
         </ThemeProvider>
         <Analytics />
+        <Toaster />
       </body>
     </html>
   )
