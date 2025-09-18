@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Send, Play, Save, FileText, Settings, Copy, RotateCcw } from "lucide-react"
+import { PHASE, isCompletedPhase } from "@/lib/phase"
 
 interface Message {
   id: string
@@ -18,33 +19,34 @@ interface Message {
 interface ChatResponse {
   message: string
   bicep_code?: string
-  phase?: string // 現在の会話フェーズ
+  phase: string // 現在の会話フェーズ
   requires_user_input?: boolean // ユーザー入力待ちかどうか
 }
+
+const INITIAL_CODE = `// Bicep template will appear here when generated from chat` as const
+const INITIAL_ASSISTANT_MESSAGE = "こんにちは！Azure Bicepテンプレートの生成をお手伝いします。どのようなAzureリソースを作成したいですか？" as const
 
 export default function CodeEditorWithChat() {
   const [chatWidth, setChatWidth] = useState(440)
   const [isResizing, setIsResizing] = useState(false)
   const resizeRef = useRef<HTMLDivElement>(null)
-  const [code, setCode] = useState(`// Bicep template will appear here when generated from chat
-// Ask the AI assistant to generate Azure resources!`)
+  const [code, setCode] = useState<string>(INITIAL_CODE)
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      content: "こんにちは！Azure Bicepテンプレートの生成をお手伝いします。どのようなAzureリソースを作成したいですか？",
+      content: INITIAL_ASSISTANT_MESSAGE,
       sender: "assistant",
       timestamp: new Date(),
     },
   ])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  // 完了判定は phase === 'completed' を利用
   const [isSystemAdvancing, setIsSystemAdvancing] = useState(false)
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true)
-  const [phase, setPhase] = useState<string>("hearing")
+  const [phase, setPhase] = useState<string>(PHASE.HEARING)
   // 共通利用するフェーズ判定用定数/関数
-  const PHASE_COMPLETED = 'completed' as const
-  const isCompletedPhase = (p?: string) => p === PHASE_COMPLETED
+  const PHASE_COMPLETED = PHASE.COMPLETED as const
+  // isCompletedPhase は共通ユーティリティを利用
   const autoAdvanceLoopRef = useRef<number>(0)
   const API_BASE_URL = "http://localhost:8000"
   // 1セッションで固定のsession_idを生成
@@ -113,12 +115,12 @@ export default function CodeEditorWithChat() {
       await fetch(`${API_BASE_URL}/reset`, { method: "POST" })
       setMessages([{
         id: "1",
-        content: "こんにちは！Azure Bicepテンプレートの生成をお手伝いします。どのようなAzureリソースを作成したいですか？",
+        content: INITIAL_ASSISTANT_MESSAGE,
         sender: "assistant",
         timestamp: new Date(),
       }])
-      setCode(`// Bicep template will appear here when generated from chat`)
-    setPhase("hearing")
+      setCode(INITIAL_CODE)
+    setPhase(PHASE.HEARING)
     } catch (error) {
       console.error("Failed to reset conversation:", error)
     }
@@ -194,11 +196,11 @@ export default function CodeEditorWithChat() {
               /*
               {(() => {
                 switch (phase) {
-                  case "hearing": return "Hearing"
-                  case "summarizing": return "Summarizing"
-                  case "code_generation": return "Generating"
-                  case "code_validation": return "Linting"
-                  case "completed": return "Completed"
+                  case PHASE.HEARING: return "Hearing"
+                  case PHASE.SUMMARIZING: return "Summarizing"
+                  case PHASE.CODE_GENERATION: return "Generating"
+                  case PHASE.CODE_VALIDATION: return "Linting"
+                  case PHASE.COMPLETED: return "Completed"
                   default: return phase || "";
                 }
               })()}
