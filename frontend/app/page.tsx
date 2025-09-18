@@ -30,6 +30,16 @@ const INITIAL_CODE = `// Bicep template will appear here when generated from cha
 const INITIAL_ASSISTANT_MESSAGE = "こんにちは！Azure Bicep テンプレートの生成をお手伝いします。どのような Azure 環境を作成したいですか？" as const
 const API_BASE_URL = "http://localhost:8000"
 
+const generateSessionId = (): string => {
+  if (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function") {
+    try {
+      return (crypto as any).randomUUID()
+    } catch {
+    }
+  }
+  return Math.random().toString(36).slice(2)
+}
+
 export default function CodeEditorWithChat() {
   const { theme } = useTheme()
   const editorTheme = theme === 'light' ? 'light' : 'vs-dark'
@@ -50,8 +60,8 @@ export default function CodeEditorWithChat() {
   const [isSystemAdvancing, setIsSystemAdvancing] = useState(false)
   const [phase, setPhase] = useState<string>(PHASE.HEARING)
 
-  // セッションIDを生成して保持
-  const sessionIdRef = useRef<string>(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2))
+  // セッションIDを生成して保持（共通関数使用）
+  const sessionIdRef = useRef<string>(generateSessionId())
 
   // Chat API へのメッセージ送信
   const sendMessageToAPI = async (message: string): Promise<ChatResponse> => {
@@ -113,6 +123,8 @@ export default function CodeEditorWithChat() {
   const resetConversation = async () => {
     try {
       await fetch(`${API_BASE_URL}/reset`, { method: "POST" })
+      // 新しいセッションIDを生成 (共通関数)
+      sessionIdRef.current = generateSessionId()
       setMessages([{
         id: "1",
         content: INITIAL_ASSISTANT_MESSAGE,
@@ -120,7 +132,9 @@ export default function CodeEditorWithChat() {
         timestamp: new Date(),
       }])
       setCode(INITIAL_CODE)
-    setPhase(PHASE.HEARING)
+      setPhase(PHASE.HEARING)
+      setIsSystemAdvancing(false)
+      setIsLoading(false)
     } catch (error) {
       console.error("Failed to reset conversation:", error)
     }
