@@ -9,18 +9,18 @@ import { Send, Play, Save, FileText, Settings, Copy, RotateCcw } from "lucide-re
 import { PHASE, isCompletedPhase } from "@/lib/phase"
 
 interface Message {
-  id: string
-  content: string
-  sender: "user" | "assistant"
-  timestamp: Date
-  bicepCode?: string
+  bicep_code?: string           // 生成された Bicep コード (optional)
+  content: string               // メッセージ内容
+  id: string                    // 一意のメッセージID
+  sender: "user" | "assistant"  // 送信者タイプ
+  timestamp: Date               // 送信日時
 }
 
 interface ChatResponse {
-  message: string // AI からの応答メッセージ
-  phase: string // 現在の会話フェーズ
-  requires_user_input: boolean // 次のユーザー入力が必要か
-  bicep_code?: string
+  bicep_code?: string           // 生成された Bicep コード (optional)
+  message: string               // AI からの応答メッセージ
+  phase: string                 // 現在の会話フェーズ
+  requires_user_input: boolean  // 次のユーザー入力が必要か
 }
 
 const INITIAL_CODE = `// Bicep template will appear here when generated from chat` as const
@@ -66,7 +66,7 @@ export default function CodeEditorWithChat() {
       content: response.message,
       sender: "assistant",
       timestamp: new Date(),
-      bicepCode: response.bicep_code,
+      bicep_code: response.bicep_code,
     }
     setMessages(prev => [...prev, aiMessage])
   }
