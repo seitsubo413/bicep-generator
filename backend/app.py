@@ -14,6 +14,11 @@ from langchain_openai import AzureChatOpenAI
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages, AnyMessage
 
+try:
+    from .constants import Phase, AUTO_PROGRESS_PHASES  # type: ignore
+except ImportError:  # 実行方法によっては相対 import が失敗する場合に備える
+    from constants import Phase, AUTO_PROGRESS_PHASES  # type: ignore
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Checkpointer: SqliteSaver が無い環境では自動で MemorySaver に切替
 # ──────────────────────────────────────────────────────────────────────────────
@@ -184,7 +189,7 @@ async def hearing(state: State):
         "bicep_code": state.get("bicep_code", ""),
         "lint_output": state.get("lint_output", ""),
         "validation_passed": state.get("validation_passed", False),
-        "phase": "hearing",
+        "phase": Phase.HEARING.value,
         "requirement_summary": state.get("requirement_summary", ""),
     }
 
@@ -297,7 +302,7 @@ async def code_generation(state: State):
         "lint_output": state.get("lint_output", ""),
         "validation_passed": False,
         "code_regen_count": regen_count,
-        "phase": "code_generation",
+        "phase": Phase.CODE_GENERATION.value,
         "requirement_summary": requirement_summary,
     }
 
@@ -352,7 +357,7 @@ Other: 追加の注意点（無ければ 'None'）
     return {
         "messages": [{"role": "assistant", "content": display_msg}],
         "requirement_summary": summary_text,
-        "phase": "summarizing",
+        "phase": Phase.SUMMARIZING.value,
     }
 
 
@@ -372,7 +377,7 @@ async def code_validation(state: State):
         }
 
     tmp_path = None
-    output = ""
+    lint_output = ""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".bicep", mode="w", encoding="utf-8") as f:
             f.write(code)
@@ -433,7 +438,7 @@ async def code_validation(state: State):
         "messages": [{"role": "assistant", "content": message}],
         "lint_output": lint_output,
         "validation_passed": validation_passed,
-        "phase": "code_validation",
+        "phase": Phase.CODE_VALIDATION.value,
     }
 
 
@@ -464,7 +469,7 @@ async def finalize_validation(state: State):
 
     return {
         "messages": [{"role": "assistant", "content": get_message()}],
-        "phase": "completed",
+        "phase": Phase.COMPLETED.value,
     }
 
 
@@ -479,11 +484,11 @@ def build_graph():
     gb.add_node("code_validation", code_validation)
     gb.add_node("finalize_validation", finalize_validation)
 
-    gb.set_entry_point("hearing")
+    gb.set_entry_point(Phase.HEARING.value)
     gb.add_conditional_edges(
-        "hearing",
+        Phase.HEARING.value,
         should_hear_again,
-        {"yes": "hearing", "no": "summarize_requirements"},
+        {"yes": Phase.HEARING.value, "no": "summarize_requirements"},
     )
     gb.add_edge("summarize_requirements", "code_generation")
     gb.add_edge("code_generation", "code_validation")
@@ -626,14 +631,16 @@ async def chat_endpoint(request: ChatRequest):
         # True: ユーザーの回答待ちが必要なとき (主に hearing の質問)
         # False: 自動で次ステップへ進めたい中間状態
         # completed は自動前進させないが、ユーザー入力も不要なので False
-        auto_progress_phases = {"summarizing", "code_generation", "code_validation"}
+        auto_progress_phases = {p.value for p in AUTO_PROGRESS_PHASES}
         requires_user_input = True
         if phase in auto_progress_phases:
             requires_user_input = False
-        if phase == "completed":
+        if phase == Phase.COMPLETED.value:
             requires_user_input = False
-        is_complete = bool((phase == "completed") or bool(passed))
-        normalized_phase = phase or ("completed" if is_complete else ("code_generation" if bicep else "hearing"))
+        is_complete = bool((phase == Phase.COMPLETED.value) or bool(passed))
+        normalized_phase = phase or (
+            Phase.COMPLETED.value if is_complete else (Phase.CODE_GENERATION.value if bicep else Phase.HEARING.value)
+        )
         # 完了時メッセージのデフォルト
         default_msg = "Bicepコードの生成が完了しました！" if is_complete else "次の質問を用意しています…"
         return ChatResponse(

@@ -4,6 +4,20 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* App semantic palette (defaults) */
+  --app-bg: #fffff;
+  --app-text: #000000;
+  --header-bg: oklch(0.975 0 0);
+  --header-text: #000000;
+  --user-message-bg: #a9dcff;
+  --user-message-text: #000000;
+  --system-message-bg: oklch(0.97 0 0);
+  --system-message-text: #000000;
+  --button-bg: #a9dcff;
+  --button-bg-hover: #0065a9;
+  --button-text: oklch(0.2 0 0);
+  --button-text-hover: oklch(0.975 0 0);
+
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -12,7 +26,7 @@
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
+  --muted: oklch(0.2 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
@@ -40,18 +54,32 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
+  --app-bg: #1e1e1e;
+  --app-text: #d4d4d4;
+  --header-bg: #0a0a0a;
+  --header-text: #ffffff;
+  --user-message-bg: #0065a9;
+  --user-message-text: #ffffff;
+  --system-message-bg: oklch(0.3 0 0);
+  --system-message-text: #d4d4d4;
+  --button-bg: #0065a9;
+  --button-bg-hover: #005b8c;
+  --button-text: oklch(0.9 0 0);
+  --button-text-hover: oklch(0.985 0 0);
+  --notify-text: #0065a9;
+  
+  --background: #1e1e1e;
+  --foreground: #ffffff;
+  --card: #1e1e1e;
+  --card-foreground: #ffffff;
+  --popover: #1e1e1e;
+  --popover-foreground: #ffffff;
+  --primary: oklch(0.269 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted: oklch(0.85 0 0);
+  --muted-foreground: oklch(0.2 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -114,6 +142,18 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 }
+
+.bg-header { background-color: var(--header-bg) !important; }
+.text-header { color: var(--header-text) !important; }
+.bg-user-message { background-color: var(--user-message-bg) !important; }
+.text-user-message { color: var(--user-message-text) !important; }
+.bg-system-message { background-color: var(--system-message-bg) !important; }
+.text-system-message { color: var(--system-message-text) !important; }
+.bg-button { background-color: var(--button-bg) !important; }
+.hover\:bg-button-hover:hover { background-color: var(--button-bg-hover) !important; }
+.text-button { color: var(--button-text) !important; }
+.hover\:text-button-hover:hover { color: var(--button-text-hover) !important; }
+.text-notify { color: var(--notify-text) !important; }
 
 @layer base {
   * {
