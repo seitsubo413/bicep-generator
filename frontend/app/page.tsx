@@ -1,16 +1,19 @@
 ﻿"use client"
 
 import React, { useState, useRef, useEffect } from "react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { CodeiumEditor } from "@codeium/react-code-editor";
-import { Send, Play, Save, FileText, Settings, Copy, RotateCcw } from "lucide-react"
+import { Send, Play, Save, FileText, Copy, RotateCcw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { PHASE, isCompletedPhase } from "@/lib/phase"
 import { useTheme } from 'next-themes'
 import ThemeToggle from "@/components/theme-toggle"
+import { LanguageToggle } from "@/components/language-toggle"
+import "@/lib/i18n" // Initialize i18n
 
 interface Message {
   bicep_code?: string           // 生成された Bicep コード (optional)
@@ -28,7 +31,6 @@ interface ChatResponse {
 }
 
 const INITIAL_CODE = `// Bicep template will appear here when generated from chat` as const
-const INITIAL_ASSISTANT_MESSAGE = "こんにちは！Azure Bicep テンプレートの生成をお手伝いします。どのような Azure 環境を作成したいですか？" as const
 const API_BASE_URL = "http://localhost:8000"
 
 const generateSessionId = (): string => {
@@ -44,6 +46,7 @@ const generateSessionId = (): string => {
 export default function CodeEditorWithChat() {
   const { theme } = useTheme()
   const { toast } = useToast()
+  const { t, i18n } = useTranslation()
   const editorTheme = theme === 'light' ? 'light' : 'vs-dark'
   const [chatWidth, setChatWidth] = useState(460)
   const [isResizing, setIsResizing] = useState(false)
@@ -52,7 +55,7 @@ export default function CodeEditorWithChat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      content: INITIAL_ASSISTANT_MESSAGE,
+      content: t("ui.greeting.initial_message"),
       sender: "assistant",
       timestamp: new Date(),
     },
@@ -65,12 +68,32 @@ export default function CodeEditorWithChat() {
   // セッションIDを生成して保持（共通関数使用）
   const sessionIdRef = useRef<string>(generateSessionId())
 
+  // 言語変更時のハンドラー
+  const handleLanguageChange = (newLanguage: "ja" | "en") => {
+    i18n.changeLanguage(newLanguage)
+    // 初期メッセージを新しい言語で更新
+    setMessages(prev => {
+      const updatedMessages = [...prev]
+      if (updatedMessages.length > 0 && updatedMessages[0].sender === "assistant") {
+        updatedMessages[0] = {
+          ...updatedMessages[0],
+          content: t("ui.greeting.initial_message")
+        }
+      }
+      return updatedMessages
+    })
+  }
+
   // Chat API へのメッセージ送信
   const sendMessageToAPI = async (message: string): Promise<ChatResponse> => {
     const response = await fetch(`${API_BASE_URL}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionIdRef.current, message }),
+      body: JSON.stringify({ 
+        session_id: sessionIdRef.current, 
+        message,
+        language: i18n.language 
+      }),
     })
     if (!response.ok) throw new Error(`API Error: ${response.status}`)
     return response.json()
@@ -129,7 +152,7 @@ export default function CodeEditorWithChat() {
       sessionIdRef.current = generateSessionId()
       setMessages([{
         id: "1",
-        content: INITIAL_ASSISTANT_MESSAGE,
+        content: t("ui.greeting.initial_message"),
         sender: "assistant",
         timestamp: new Date(),
       }])
@@ -209,8 +232,8 @@ export default function CodeEditorWithChat() {
   // Play ボタン (未実装機能の通知)
   const handleRun = () => {
     toast({
-      title: "まだ未実装です",
-      description: "デプロイ / 実行機能は今後追加予定です。",
+      title: t("ui.toast.deploy_not_implemented"),
+      description: t("ui.toast.deploy_description"),
       duration: 4000,
     })
   }
@@ -242,7 +265,7 @@ export default function CodeEditorWithChat() {
         <div className="h-12 bg-header text-header border-app border-b flex items-center px-4 justify-between">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${isSystemAdvancing ? "bg-amber-400 animate-pulse" : isCompletedPhase(phase) ? "bg-green-500" : "bg-green-400"}`}></div>
-            <span className="text-sm font-medium">Bicep AI Assistant</span>
+            <span className="text-sm font-medium">{t("ui.chat.assistant_name")}</span>
             <span
               className={`ml-2 text-[10px] px-2 py-0.5 rounded uppercase tracking-wide border border-gray-500`}
               title={`Phase: ${phase}`}
@@ -250,7 +273,7 @@ export default function CodeEditorWithChat() {
               {phase}
             </span>
           </div>
-          <Button variant="ghost" size="sm" onClick={resetConversation} className="text-muted hover:text-app hover-bg-surface-3" title="会話をリセット">
+          <Button variant="ghost" size="sm" onClick={resetConversation} className="text-muted hover:text-app hover-bg-surface-3" title={t("ui.chat.reset_conversation")}>
             <RotateCcw className="h-4 w-4" />
           </Button>
         </div>
@@ -270,7 +293,7 @@ export default function CodeEditorWithChat() {
                 <div className="text-system-message bg-system-message rounded-lg px-3 py-2 text-sm">
                   <div className="flex items-center gap-2">
                     <div className="animate-pulse"></div>
-                    <span>AI が{isSystemAdvancing ? "自動で処理中" : "考えています"}...</span>
+                    <span>{isSystemAdvancing ? t("ui.chat.auto_processing") : t("ui.chat.thinking")}</span>
                   </div>
                 </div>
               </div>
@@ -284,7 +307,7 @@ export default function CodeEditorWithChat() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder={isCompletedPhase(phase) ? "会話が完了しました。リセットして新しい会話を開始してください。" : "メッセージを入力..."}
+              placeholder={isCompletedPhase(phase) ? t("ui.chat.input_placeholder_completed") : t("ui.chat.input_placeholder")}
               className="flex-1 bg-surface-2 border-app text-app placeholder:text-muted"
               disabled={isLoading || isCompletedPhase(phase)}
             />
@@ -294,7 +317,7 @@ export default function CodeEditorWithChat() {
           </div>
           {isCompletedPhase(phase) && (
             <p className="text-xs text-muted mt-2">
-              Bicep コードの生成が完了しました。新しいリソースを作成する場合は、右上のリセットボタンをクリックしてください。
+              {t("ui.chat.completion_notice")}
             </p>
           )}
         </div>
@@ -308,9 +331,9 @@ export default function CodeEditorWithChat() {
           <div className="h-12 bg-header text-header border-b border-app flex items-center px-4 gap-2">
             
             <FileText className="h-4 w-4 text-slate-400" />
-            <span className="text-sm font-medium">main.bicep</span>
+            <span className="text-sm font-medium">{t("ui.editor.filename")}</span>
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2" onClick={copyToClipboard} title="コードをクリップボードにコピー">
+              <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2" onClick={copyToClipboard} title={t("ui.editor.copy_tooltip")}>
                 <Copy className="h-4 w-4" />
               </Button>
               <Button
@@ -318,7 +341,7 @@ export default function CodeEditorWithChat() {
                 size="sm"
                 className="text-muted hover:text-app hover-bg-surface-2"
                 onClick={downloadBicep}
-                title="Bicep コードをダウンロード"
+                title={t("ui.editor.download_tooltip")}
               >
                 <Save className="h-4 w-4" />
               </Button>
@@ -327,14 +350,15 @@ export default function CodeEditorWithChat() {
                 size="sm"
                 className="text-muted hover:text-app hover-bg-surface-2"
                 onClick={handleRun}
-                title="Bicep をデプロイ (未実装)"
+                title={t("ui.editor.deploy_tooltip")}
               >
                 <Play className="h-4 w-4" />
               </Button>
+              <LanguageToggle 
+                currentLanguage={i18n.language as "ja" | "en"} 
+                onLanguageChange={handleLanguageChange} 
+              />
               <ThemeToggle />
-              <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2">
-                <Settings className="h-4 w-4" />
-              </Button>
             </div>
           </div>
 

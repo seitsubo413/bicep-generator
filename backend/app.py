@@ -16,8 +16,10 @@ from langgraph.graph.message import add_messages, AnyMessage
 
 try:
     from .constants import Phase, AUTO_PROGRESS_PHASES  # type: ignore
+    from .i18n.messages import get_message, set_language  # type: ignore
 except ImportError:  # 実行方法によっては相対 import が失敗する場合に備える
     from constants import Phase, AUTO_PROGRESS_PHASES  # type: ignore
+    from i18n.messages import get_message, set_language  # type: ignore
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Checkpointer: SqliteSaver が無い環境では自動で MemorySaver に切替
@@ -86,6 +88,7 @@ class State(TypedDict):
     code_regen_count: int  # 再生成回数（初回生成は含めない）
     phase: str  # hearing | code_generation | code_validation | completed
     requirement_summary: str  # ヒアリング要件サマリ（code_generation プロンプト用）
+    language: str  # 言語設定 ("ja" | "en")
 
 
 class ChatMessage(BaseModel):
@@ -97,6 +100,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     session_id: Optional[str] = "default"  # フロントから会話IDを渡すのが推奨
     message: Optional[str] = None  # 空の場合は「AIの次のステップだけ」進める
+    language: Optional[str] = "ja"  # 言語設定 ("ja" | "en")
     conversation_history: List[ChatMessage] = []  # 未使用（保持はcheckpointerに任せる）
 
 
@@ -159,29 +163,21 @@ def _history_from_state(state: State) -> List[Dict[str, str]]:
 
 async def hearing(state: State):
     """要件ヒアリング: 1問だけ短く投げる"""
+    language = state.get("language", "ja")
     history = _history_from_state(state)
     messages = [
         {
             "role": "system",
-            "content": """
-             ## 役割
-             あなたは優秀な要件ヒアリング担当者です。ユーザーの要件を深掘りして、必要な情報を引き出すための質問を生成するのがあなたの役割です。
-             
-             ## 目的
-             ユーザーは、最終的に Azure 上に環境を構築しようとしています。ヒアリング項目はあくまでも、Azure 上に環境を構築するための bicep コード生成に必要な情報に限定してください。
-             
-             ## 考え方
-             まだ背景が明確になっていない場合には、まずは背景を明確にするための質問をしてください。
-             """,
+            "content": get_message("prompts.hearing.system_role", language),
         },
         *history,
         {
             "role": "user",
-            "content": "ユーザーの要件を深掘りするための質問をしてください。ただし、質問は一つだけにしてください。分量は短く、簡潔にしてください。",
+            "content": get_message("prompts.hearing.user_instruction", language),
         },
     ]
     resp = await llm.ainvoke(messages)
-    question = _to_text(resp.content).strip() or "要件をもう少し教えてください。"
+    question = _to_text(resp.content).strip() or get_message("prompts.hearing.fallback_question", language)
     return {
         "messages": [{"role": "assistant", "content": question}],
         "n_callings": state.get("n_callings", 0) + 1,
@@ -191,22 +187,21 @@ async def hearing(state: State):
         "validation_passed": state.get("validation_passed", False),
         "phase": Phase.HEARING.value,
         "requirement_summary": state.get("requirement_summary", ""),
+        "language": language,
     }
 
 
 def should_hear_again(state: State) -> str:
     """ヒアリング継続判定: 'yes' or 'no' を返す（同期関数）"""
+    language = state.get("language", "ja")
     history = _history_from_state(state)
     messages = [
         {
             "role": "system",
-            "content": """
-あなたは、Azure環境を誰が作っても9割同じになる程度に要件が満ちたか判定します。
-要件が足りておらずヒアリングを続けるべきなら 'yes'、充足していれば 'no'。回答は 'yes' または 'no' のみ。
-""",
+            "content": get_message("prompts.should_hear_again.system_instruction", language),
         },
         *history,
-        {"role": "user", "content": "要件ヒアリングを続けるべきですか？ 'yes' か 'no' で答えてください。"},
+        {"role": "user", "content": get_message("prompts.should_hear_again.user_question", language)},
     ]
     if state.get("n_callings", 0) >= MAX_HEARING_CALLS:
         return "no"
@@ -217,6 +212,7 @@ def should_hear_again(state: State) -> str:
 
 async def code_generation(state: State):
     """Bicep コード生成 (lint 結果があれば考慮)"""
+    language = state.get("language", "ja")
     requirement_summary = state.get("requirement_summary") or "(要件サマリ未生成)"
     lint_output_full = state.get("lint_output") or "(lint 結果なし)"
     previous_code = state.get("bicep_code", "")
@@ -244,21 +240,9 @@ async def code_generation(state: State):
 
     # 初回と再生成で system プロンプトを少し分岐
     if not prev_code_exists:
-        system_prompt = (
-            "あなたは熟練した Azure インフラエンジニアです。以下の『要件サマリ』と（存在すれば）『直近の lint 結果』のみを根拠に、"
-            "最小で妥当かつ再利用しやすい Bicep コードを 1 ファイル分だけ提示してください。"
-            "出力は説明を含めず、```bicep で始まるコードブロックのみです。以前の会話内容は参照できない前提で、要件サマリ内の情報だけで不足があれば合理的なデフォルトを仮定してください。"
-        )
+        system_prompt = get_message("prompts.code_generation.system_initial", language)
     else:
-        system_prompt = (
-            "あなたは熟練した Azure インフラエンジニアです。これから提示する『既存コード』と『lint 結果』を精査し、"
-            "致命的/重要な問題を解消しつつ、不要なリソース追加や過剰最適化を避けて Bicep コードを改良してください。"
-            "次の原則を必ず守ってください:\n"
-            "1. 既存コードで既に妥当な部分は極力変更しない（diff を最小化）。\n"
-            "2. lint / 要件サマリに基づく不足のみを補う。推測が必要な場合は最小構成で仮定。\n"
-            "3. 出力はコードブロックのみ（説明・コメントは問題箇所への最小限のコメント以外不要）。\n"
-            "4. 変更加筆が必須でない限りリソース名やパラメータ名を再命名しない。"
-        )
+        system_prompt = get_message("prompts.code_generation.system_regeneration", language)
 
     user_prompt_parts = [
         f"## 要件サマリ\n{requirement_summary}",
@@ -267,13 +251,9 @@ async def code_generation(state: State):
         user_prompt_parts.append(prev_code_section)
     user_prompt_parts.append(f"## 直近 lint 結果\n{lint_output}{truncated_note}")
     if prev_code_exists:
-        user_prompt_parts.append(
-            "## 指示\n上記を踏まえて最小修正で改良後の完全な Bicep コード全体を再掲してください。コードブロックのみで返してください。"
-        )
+        user_prompt_parts.append(get_message("prompts.code_generation.user_regeneration", language))
     else:
-        user_prompt_parts.append(
-            "## 指示\n上記を踏まえて Bicep コードを初回生成してください。説明・コメントは最小限（無くても良い）。コードブロックのみで返してください。"
-        )
+        user_prompt_parts.append(get_message("prompts.code_generation.user_initial", language))
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -290,9 +270,9 @@ async def code_generation(state: State):
     if m:
         code_text = m.group(1).strip()
     done_msg = (
-        "Bicepコードを生成しました。lint 検証に進みます。"
+        get_message("messages.code_generation.initial_done", language)
         if not prev_code_exists
-        else "Bicepコードを改良しました。lint 再検証に進みます。"
+        else get_message("messages.code_generation.regeneration_done", language)
     )
     return {
         "messages": [{"role": "assistant", "content": done_msg}],
@@ -304,11 +284,13 @@ async def code_generation(state: State):
         "code_regen_count": regen_count,
         "phase": Phase.CODE_GENERATION.value,
         "requirement_summary": requirement_summary,
+        "language": language,
     }
 
 
 async def summarize_requirements(state: State):
     """ヒアリング会話全体から要件サマリを生成し state に格納する。"""
+    language = state.get("language", "ja")
     history = _history_from_state(state)
     # 会話履歴を文字列化（長すぎる場合は適度にトリム）
     joined = []
@@ -326,38 +308,27 @@ async def summarize_requirements(state: State):
     messages = [
         {
             "role": "system",
-            "content": """
-あなたは Azure 向けインフラ要件の要約アシスタントです。これまでのヒアリング会話ログから、Bicep コード生成に必要な要件だけを抽出し、以下のセクション構成で簡潔にまとめてください。
-
-出力フォーマット:
-Purpose: ...
-Resources: 箇条書き (種類 / 個数 / SKU / 目的)
-Networking: VNet, Subnet, DNS, Public IP, NSG, Endpoint など
-Security: RBAC, KeyVault, Secrets, Encryption, NetworkRules など
-Scaling & Availability: スケール要件 / 可用性ゾーン / SLA 想定
-Constraints: 地域, ネーミング規則, コスト制約, タグ方針
-Other: 追加の注意点（無ければ 'None'）
-
-禁止事項: コード出力や余計な説明。""",
+            "content": get_message("prompts.summarize_requirements.system_instruction", language),
         },
         {
             "role": "user",
-            "content": f"以下がヒアリング会話ログです。要件を抽出し指示フォーマットでまとめてください。\n\n{raw_dialogue}",
+            "content": get_message("prompts.summarize_requirements.user_instruction", language, raw_dialogue=raw_dialogue),
         },
     ]
     resp = await llm.ainvoke(messages)
     summary_text = _to_text(resp.content).strip()
     if not summary_text:
-        summary_text = "(要約生成に失敗しました)"
+        summary_text = get_message("messages.summarize_requirements.generation_failed", language)
 
     if DEBUG_LOG:
         print("[requirement summary]", summary_text)
 
-    display_msg = f"要件を集約しました。コード生成へ進みます。\n\n===== 要件サマリ =====\n{summary_text}"
+    display_msg = get_message("messages.summarize_requirements.display_message", language, summary_text=summary_text)
     return {
         "messages": [{"role": "assistant", "content": display_msg}],
         "requirement_summary": summary_text,
         "phase": Phase.SUMMARIZING.value,
+        "language": language,
     }
 
 
@@ -579,12 +550,16 @@ async def chat_endpoint(request: ChatRequest):
         if DEBUG_LOG:
             print(f"[chat] session={session_id} message={request.message!r}")
 
-        # ① Humanの発話を state に追加（ある場合のみ）
+        # ① 言語設定とHumanの発話を state に追加
+        language = request.language or "ja"
+        state_update = {"language": language}
         if request.message:
-            GRAPH.update_state(  # type: ignore[arg-type]
-                config,  # type: ignore[arg-type]
-                {"messages": [{"role": "user", "content": request.message}]},
-            )
+            state_update["messages"] = [{"role": "user", "content": request.message}]
+        
+        GRAPH.update_state(  # type: ignore[arg-type]
+            config,  # type: ignore[arg-type]
+            state_update,
+        )
 
         # ② 必要に応じて複数ステップ自動実行する
         steps_executed = 0

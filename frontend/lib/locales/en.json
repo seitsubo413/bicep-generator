@@ -1,0 +1,34 @@
+{
+  "ui": {
+    "chat": {
+      "assistant_name": "Bicep AI Assistant",
+      "input_placeholder": "Type a message...",
+      "input_placeholder_completed": "Conversation completed. Please reset to start a new conversation.",
+      "thinking": "AI is thinking...",
+      "auto_processing": "AI is auto-processing...",
+      "completion_notice": "Bicep code generation completed. To create new resources, click the reset button in the top right.",
+      "reset_conversation": "Reset conversation"
+    },
+    "editor": {
+      "filename": "main.bicep",
+      "copy_tooltip": "Copy code to clipboard",
+      "download_tooltip": "Download Bicep code",
+      "deploy_tooltip": "Deploy Bicep (not implemented)",
+      "settings_tooltip": "Settings"
+    },
+    "toast": {
+      "deploy_not_implemented": "Not implemented yet",
+      "deploy_description": "Deploy / execution functionality will be added in the future."
+    },
+    "greeting": {
+      "initial_message": "Hello! I'll help you generate Azure Bicep templates. What kind of Azure environment would you like to create?"
+    },
+    "settings": {
+      "language_label": "Language / 言語",
+      "language_japanese": "日本語",
+      "language_english": "English",
+      "title": "Settings",
+      "description": "Configure your application preferences"
+    }
+  }
+}

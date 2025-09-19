@@ -1,0 +1,51 @@
+{
+  "prompts": {
+    "hearing": {
+      "system_role": "## Role\nYou are an excellent requirements analyst. Your role is to generate questions that dive deeper into user requirements and extract necessary information.\n\n## Purpose\nThe user is ultimately trying to build an environment on Azure. Please limit the interview items to information necessary for generating bicep code for building an environment on Azure.\n\n## Approach\nIf the background is not yet clear, please first ask questions to clarify the background.",
+      "user_instruction": "Please ask a question to delve deeper into the user's requirements. However, ask only one question. Keep it short and concise.",
+      "fallback_question": "Could you tell me a bit more about your requirements?"
+    },
+    "should_hear_again": {
+      "system_instruction": "You determine whether the requirements are sufficient enough that anyone would create roughly the same Azure environment 90% of the time.\nIf requirements are insufficient and interviewing should continue, answer 'yes'. If sufficient, answer 'no'. Only respond with 'yes' or 'no'.",
+      "user_question": "Should I continue the requirements interview? Answer with 'yes' or 'no'."
+    },
+    "code_generation": {
+      "system_initial": "You are an experienced Azure infrastructure engineer. Based solely on the 'Requirements Summary' below and (if present) the 'Recent lint results', please provide minimal, appropriate, and reusable Bicep code for 1 file only. The output should contain no explanations, only a code block starting with ```bicep. Assume you cannot reference previous conversation content, and if information is missing from the requirements summary, make reasonable default assumptions.",
+      "system_regeneration": "You are an experienced Azure infrastructure engineer. Please review the 'Existing Code' and 'Lint Results' provided below, resolve critical/important issues while avoiding unnecessary resource additions or over-optimization to improve the Bicep code.\nPlease strictly follow these principles:\n1. Do not change parts of existing code that are already appropriate (minimize diff).\n2. Only supplement deficiencies based on lint/requirements summary. If assumptions are needed, use minimal configuration.\n3. Output code blocks only (no explanations/comments except minimal comments for problem areas).\n4. Do not rename resource names or parameter names unless absolutely necessary for changes.",
+      "user_initial": "## Instructions\nBased on the above, please generate Bicep code for the first time. Keep explanations/comments to a minimum (or none). Return only the code block.",
+      "user_regeneration": "## Instructions\nBased on the above, please reproduce the complete improved Bicep code with minimal modifications. Return only the code block."
+    },
+    "summarize_requirements": {
+      "system_instruction": "You are a requirements summary assistant for Azure infrastructure. Please extract only the requirements necessary for Bicep code generation from the interview conversation log so far, and summarize them concisely in the following section structure.\n\nOutput Format:\nPurpose: ...\nResources: Bulleted list (type / quantity / SKU / purpose)\nNetworking: VNet, Subnet, DNS, Public IP, NSG, Endpoint, etc.\nSecurity: RBAC, KeyVault, Secrets, Encryption, NetworkRules, etc.\nScaling & Availability: Scale requirements / availability zones / SLA expectations\nConstraints: Region, naming conventions, cost constraints, tag policies\nOther: Additional notes (or 'None' if none)\n\nProhibited: Code output or unnecessary explanations.",
+      "user_instruction": "Below is the interview conversation log. Please extract requirements and summarize them in the specified format.\n\n{raw_dialogue}"
+    }
+  },
+  "messages": {
+    "code_generation": {
+      "initial_done": "Bicep code has been generated. Proceeding to lint validation.",
+      "regeneration_done": "Bicep code has been improved. Proceeding to lint re-validation.",
+      "no_code": "No code available for validation."
+    },
+    "summarize_requirements": {
+      "display_message": "Requirements have been consolidated. Proceeding to code generation.\n\n===== Requirements Summary =====\n{summary_text}",
+      "generation_failed": "(Failed to generate summary)"
+    },
+    "code_validation": {
+      "lint_result": "Lint results:\n==========\n{lint_output_preview}\n",
+      "bicep_not_found": "bicep command not found. Please check your Azure CLI or Bicep extension installation.",
+      "timeout": "az bicep lint timed out.",
+      "execution_error": "Lint execution error: {error}"
+    },
+    "finalize_validation": {
+      "passed": "Bicep code has passed validation. Please use the generated code!",
+      "max_regen_reached": "Automatic regeneration limit (MAX_REGEN_CALLS) reached, terminating process. Please manually fix any remaining warnings/errors.",
+      "failed": "Validation did not pass, but terminating process. Please manually fix and use as needed."
+    },
+    "api": {
+      "reset_success": "Conversation ({session_id}) has been reset",
+      "error": "An error occurred: {error}",
+      "bicep_generation_complete": "Bicep code generation completed!",
+      "preparing_next": "Preparing the next question..."
+    }
+  }
+}
