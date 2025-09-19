@@ -1,105 +1,78 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
+@import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* App semantic palette (defaults) */
-  --app-bg: #fffff;
-  --app-text: #000000;
-  --header-bg: oklch(0.975 0 0);
-  --header-text: #000000;
-  --user-message-bg: #a9dcff;
-  --user-message-text: #000000;
-  --system-message-bg: oklch(0.97 0 0);
-  --system-message-text: #000000;
-  --button-bg: #a9dcff;
-  --button-bg-hover: #0065a9;
-  --button-text: oklch(0.2 0 0);
-  --button-text-hover: oklch(0.975 0 0);
-
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.2 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Modern light theme inspired by VS Code and GitHub */
+  --background: #ffffff; /* Pure white background like modern apps */
+  --foreground: #24292f; /* Dark text for maximum contrast */
+  --card: #f8f9fa; /* Slightly more visible light gray cards */
+  --card-foreground: #24292f; /* Dark text on cards */
+  --popover: #ffffff; /* White popover backgrounds */
+  --popover-foreground: #24292f; /* Dark text for popover content */
+  --primary: #fd7e14; /* Orange for primary actions */
+  --primary-foreground: #ffffff; /* White text on primary buttons */
+  --secondary: #0969da; /* GitHub blue for user messages */
+  --secondary-foreground: #ffffff; /* White text on secondary buttons */
+  --muted: #e9ecef; /* More visible light gray for muted backgrounds */
+  --muted-foreground: #6c757d; /* Medium gray for muted text */
+  --accent: #0969da; /* GitHub blue for links and highlights */
+  --accent-foreground: #ffffff; /* White text on accent elements */
+  --destructive: #d1242f; /* GitHub red for destructive actions */
+  --destructive-foreground: #ffffff; /* White text on destructive buttons */
+  --border: #ced4da; /* More visible gray borders */
+  --input: #ffffff; /* White input fields with borders */
+  --ring: #0969da; /* Blue focus rings */
+  --chart-1: #4f46e5;
+  --chart-2: #d97706;
+  --chart-3: #f43f5e;
+  --chart-4: #3b82f6;
+  --chart-5: #10b981;
+  --radius: 0.75rem; /* More rounded corners for modern feel */
+  --sidebar: #f6f8fa;
+  --sidebar-foreground: #24292f;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #24292f;
+  --sidebar-accent: #0969da;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ced4da;
+  --sidebar-ring: #0969da;
+  --editor-header: #fff3cd; /* Light yellow for editor header */
+  --editor-bg: #fefce8; /* Very light yellow for editor background */
 }
 
 .dark {
-  --app-bg: #1e1e1e;
-  --app-text: #d4d4d4;
-  --header-bg: #0a0a0a;
-  --header-text: #ffffff;
-  --user-message-bg: #0065a9;
-  --user-message-text: #ffffff;
-  --system-message-bg: oklch(0.3 0 0);
-  --system-message-text: #d4d4d4;
-  --button-bg: #0065a9;
-  --button-bg-hover: #005b8c;
-  --button-text: oklch(0.9 0 0);
-  --button-text-hover: oklch(0.985 0 0);
-  --notify-text: #0065a9;
-  
-  --background: #1e1e1e;
-  --foreground: #ffffff;
-  --card: #1e1e1e;
-  --card-foreground: #ffffff;
-  --popover: #1e1e1e;
-  --popover-foreground: #ffffff;
-  --primary: oklch(0.269 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.85 0 0);
-  --muted-foreground: oklch(0.2 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Updated dark mode colors to complement the modern palette */
+  --background: #1f2937; /* Dark blue-gray background */
+  --foreground: #f9fafb; /* Light gray text */
+  --card: #374151; /* Medium gray for cards */
+  --card-foreground: #f9fafb; /* Light gray for card text */
+  --popover: #374151; /* Medium gray for popovers */
+  --popover-foreground: #f9fafb; /* Light gray for popover text */
+  --primary: #f59e0b; /* Brighter amber for dark mode */
+  --primary-foreground: #1f2937; /* Dark text on primary buttons */
+  --secondary: #818cf8; /* Lighter blue for dark mode */
+  --secondary-foreground: #1f2937; /* Dark text on secondary buttons */
+  --muted: #4b5563; /* Medium gray for muted backgrounds */
+  --muted-foreground: #9ca3af; /* Light gray for muted text */
+  --accent: #818cf8; /* Lighter blue for accents */
+  --accent-foreground: #1f2937; /* Dark text on accent elements */
+  --destructive: #ff6b6b; /* Softer red for dark mode */
+  --destructive-foreground: #1f2937; /* Dark text on destructive buttons */
+  --border: #4b5563; /* Medium gray for borders */
+  --input: #374151; /* Medium gray for input fields */
+  --ring: #818cf8; /* Blue for focus rings in dark mode */
+  --sidebar: #374151;
+  --sidebar-foreground: #f9fafb;
+  --sidebar-primary: #4b5563;
+  --sidebar-primary-foreground: #f9fafb;
+  --sidebar-accent: #818cf8;
+  --sidebar-accent-foreground: #1f2937;
+  --sidebar-border: #4b5563;
+  --sidebar-ring: #818cf8;
+  --editor-header: #4b5563; /* Medium gray for editor header in dark mode */
+  --editor-bg: #374151; /* Medium gray for editor background in dark mode */
 }
 
 @theme inline {
@@ -143,18 +116,6 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-.bg-header { background-color: var(--header-bg) !important; }
-.text-header { color: var(--header-text) !important; }
-.bg-user-message { background-color: var(--user-message-bg) !important; }
-.text-user-message { color: var(--user-message-text) !important; }
-.bg-system-message { background-color: var(--system-message-bg) !important; }
-.text-system-message { color: var(--system-message-text) !important; }
-.bg-button { background-color: var(--button-bg) !important; }
-.hover\:bg-button-hover:hover { background-color: var(--button-bg-hover) !important; }
-.text-button { color: var(--button-text) !important; }
-.hover\:text-button-hover:hover { color: var(--button-text-hover) !important; }
-.text-notify { color: var(--notify-text) !important; }
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -162,4 +123,33 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Added custom animations for modern feel */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(217, 119, 6, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(217, 119, 6, 0.6);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
 }

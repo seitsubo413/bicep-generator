@@ -58,8 +58,10 @@ const useResizable = (initialWidth: number, minWidth: number, maxWidth: number) 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, e.clientX))
-      setWidth(newWidth)
+      const newWidth = e.clientX
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        setWidth(newWidth)
+      }
     }
 
     const handleMouseUp = () => {
@@ -69,15 +71,11 @@ const useResizable = (initialWidth: number, minWidth: number, maxWidth: number) 
     if (isResizing) {
       document.addEventListener("mousemove", handleMouseMove)
       document.addEventListener("mouseup", handleMouseUp)
-      document.body.style.cursor = "col-resize"
-      document.body.style.userSelect = "none"
     }
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
     }
   }, [isResizing, minWidth, maxWidth])
 
@@ -97,6 +95,7 @@ const useChat = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isSystemAdvancing, setIsSystemAdvancing] = useState(false)
   const [phase, setPhase] = useState<string>(PHASE.HEARING)
+
   const sessionIdRef = useRef<string>(generateSessionId())
 
   const sendMessageToAPI = useCallback(
@@ -162,7 +161,7 @@ const useChat = () => {
   }
 }
 
-export default function Home() {
+export default function ModernBicepGeneratorWithChat() {
   const { theme } = useTheme()
   const { toast } = useToast()
   const { t, i18n } = useTranslation()
@@ -344,10 +343,10 @@ export default function Home() {
   return (
     <div className="h-screen bg-background text-foreground flex overflow-hidden">
       <div
-        className="flex flex-col border-r border-border min-w-0 bg-card rounded-r-2xl mr-1"
+        className="flex flex-col border-r border-border/50 min-w-0 bg-card/50 backdrop-blur-sm"
         style={{ width: `${chatWidth}px` }}
       >
-        <div className="h-16 bg-card border-b border-border flex items-center px-6 justify-between rounded-tr-2xl">
+        <div className="h-16 bg-gradient-to-r from-card to-card/80 border-b border-border/30 flex items-center px-6 justify-between backdrop-blur-sm">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
               <div className={cn("p-2 rounded-xl", phaseStatus.color, phaseStatus.animation)}>{phaseStatus.icon}</div>
@@ -373,7 +372,7 @@ export default function Home() {
           </Button>
         </div>
 
-        <ScrollArea className="flex-1 p-6 h-0">
+        <ScrollArea className="flex-1 p-6">
           <div className="space-y-6">
             {messages.map((message) => (
               <div key={message.id} className={cn("flex", message.sender === "user" ? "justify-end" : "justify-start")}>
@@ -381,8 +380,8 @@ export default function Home() {
                   className={cn(
                     "max-w-[85%] rounded-2xl px-5 py-4 text-sm whitespace-pre-wrap break-words shadow-sm",
                     message.sender === "user"
-                      ? "bg-gradient-to-r from-secondary to-secondary/90 text-secondary-foreground ml-4 rounded-br-lg shadow-md"
-                      : "bg-muted/50 text-foreground mr-4 rounded-bl-lg border border-border/50 shadow-md backdrop-blur-sm",
+                      ? "bg-gradient-to-r from-primary to-primary/90 text-primary-foreground ml-4 rounded-br-md"
+                      : "bg-gradient-to-r from-muted to-muted/80 text-muted-foreground mr-4 rounded-bl-md border border-border/30",
                   )}
                 >
                   {message.content}
@@ -391,7 +390,7 @@ export default function Home() {
             ))}
             {(isLoading || isSystemAdvancing) && (
               <div className="flex justify-start">
-                <div className="bg-muted/50 text-muted-foreground rounded-2xl rounded-bl-lg px-5 py-4 text-sm mr-4 border border-border/50 shadow-md backdrop-blur-sm">
+                <div className="bg-gradient-to-r from-muted to-muted/80 text-muted-foreground rounded-2xl rounded-bl-md px-5 py-4 text-sm mr-4 border border-border/30">
                   <div className="flex items-center gap-3">
                     <div className="flex gap-1">
                       <div
@@ -417,7 +416,7 @@ export default function Home() {
 
         <Separator className="opacity-30" />
 
-        <div className="p-6 bg-card border-t border-border rounded-br-2xl">
+        <div className="p-6 bg-gradient-to-r from-card to-card/80 backdrop-blur-sm">
           <div className="flex gap-3">
             <Input
               value={inputMessage}
@@ -426,14 +425,14 @@ export default function Home() {
               placeholder={
                 isCompletedPhase(phase) ? t("ui.chat.input_placeholder_completed") : t("ui.chat.input_placeholder")
               }
-              className="flex-1 rounded-xl border-border bg-background focus:ring-2 focus:ring-secondary/20 focus:border-secondary/50"
+              className="flex-1 rounded-xl border-border/30 bg-background/50 backdrop-blur-sm focus:ring-2 focus:ring-primary/20"
               disabled={isLoading || isCompletedPhase(phase)}
             />
             <Button
               onClick={handleSendMessage}
               size="default"
               disabled={isLoading || isCompletedPhase(phase)}
-              className="rounded-xl bg-gradient-to-r from-secondary to-secondary/90 hover:from-secondary/90 hover:to-secondary shadow-lg hover:shadow-xl transition-all duration-200"
+              className="rounded-xl bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <Send className="h-4 w-4" />
             </Button>
@@ -446,14 +445,14 @@ export default function Home() {
 
       <div
         className={cn(
-          "w-1 cursor-col-resize transition-all duration-200 hover:bg-gradient-to-b hover:from-secondary/30 hover:to-secondary/50 hidden md:block",
-          isResizing && "bg-gradient-to-b from-secondary/50 to-secondary/70 w-2",
+          "w-1 cursor-col-resize transition-all duration-200 hover:bg-gradient-to-b hover:from-primary/30 hover:to-secondary/30 hidden md:block",
+          isResizing && "bg-gradient-to-b from-primary/50 to-secondary/50 w-2",
         )}
         onMouseDown={handleMouseDown}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 rounded-l-2xl ml-1 overflow-hidden">
-        <div className="h-16 bg-yellow-50 dark:bg-card/30 border-b border-yellow-200 dark:border-border/50 flex items-center px-6 gap-4 rounded-tl-2xl border border-yellow-200 dark:border-border/50 border-b-0">
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="h-16 bg-gradient-to-r from-card to-card/80 border-b border-border/30 flex items-center px-6 gap-4 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-gradient-to-r from-secondary/20 to-accent/20">
               <Code2 className="h-4 w-4 text-secondary" />
@@ -495,15 +494,15 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex-1 flex min-w-0 overflow-hidden bg-yellow-50/30 dark:bg-card/30 rounded-b-2xl border border-yellow-200 dark:border-border/50 border-t-0">
-          <div className="flex-1 relative min-w-0 h-full overflow-hidden bg-yellow-50/20 dark:bg-card/20 rounded-b-2xl">
+        <div className="flex-1 flex min-w-0 overflow-hidden bg-gradient-to-br from-background to-background/95">
+          <div className="flex-1 relative min-w-0 h-full rounded-tl-2xl overflow-hidden border-l border-t border-border/20 bg-card/30 backdrop-blur-sm">
             {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
             {/* @ts-ignore */}
             <CodeiumEditor
               value={code}
               onChange={(value?: string) => setCode(value ?? "")}
               language="bicep"
-              className="h-full w-full rounded-b-2xl"
+              className="h-full w-full"
               height="100%"
               theme={editorTheme}
               options={{
