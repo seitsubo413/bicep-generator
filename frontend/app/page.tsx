@@ -1,91 +1,57 @@
 "use client"
 
-import type React from "react"
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
-import { CodeiumEditor } from "@codeium/react-code-editor"
-import { Send, Play, Save, Copy, RotateCcw, Code2, Sparkles, Zap, Heart } from "lucide-react"
+import { CodeiumEditor } from "@codeium/react-code-editor";
+import { Send, Play, Save, FileText, Copy, RotateCcw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { PHASE, isCompletedPhase } from "@/lib/phase"
-import { useTheme } from "next-themes"
+import { useTheme } from 'next-themes'
 import ThemeToggle from "@/components/theme-toggle"
-import { SettingsDialog } from "@/components/settings-dialog"
-import { cn } from "@/lib/utils"
-import "@/lib/i18n"
+import { LanguageToggle } from "@/components/language-toggle"
+import "@/lib/i18n" // Initialize i18n
 
 interface Message {
-  bicep_code?: string
-  content: string
-  id: string
-  sender: "user" | "assistant"
-  timestamp: Date
+  bicep_code?: string           // 生成された Bicep コード (optional)
+  content: string               // メッセージ内容
+  id: string                    // 一意のメッセージID
+  sender: "user" | "assistant"  // 送信者タイプ
+  timestamp: Date               // 送信日時
 }
 
 interface ChatResponse {
-  bicep_code?: string
-  message: string
-  phase: string
-  requires_user_input: boolean
+  bicep_code?: string           // 生成された Bicep コード (optional)
+  message: string               // AI からの応答メッセージ
+  phase: string                 // 現在の会話フェーズ
+  requires_user_input: boolean  // 次のユーザー入力が必要か
 }
 
-const INITIAL_CODE = `// ✨ Your Bicep template will appear here when generated from chat
-// Welcome to your modern Bicep generator!` as const
+const INITIAL_CODE = `// Bicep template will appear here when generated from chat` as const
 const API_BASE_URL = "http://localhost:8000"
-const CHAT_WIDTH_MIN = 320
-const CHAT_WIDTH_MAX = 600
-const CHAT_WIDTH_DEFAULT = 460
 
 const generateSessionId = (): string => {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID()
+  if (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function") {
+    try {
+      return (crypto as any).randomUUID()
+    } catch {
+    }
   }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return Math.random().toString(36).slice(2)
 }
 
-const useResizable = (initialWidth: number, minWidth: number, maxWidth: number) => {
-  const [width, setWidth] = useState(initialWidth)
-  const [isResizing, setIsResizing] = useState(false)
-
-  const handleMouseDown = useCallback(() => {
-    setIsResizing(true)
-  }, [])
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, e.clientX))
-      setWidth(newWidth)
-    }
-
-    const handleMouseUp = () => {
-      setIsResizing(false)
-    }
-
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
-      document.body.style.cursor = "col-resize"
-      document.body.style.userSelect = "none"
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-    }
-  }, [isResizing, minWidth, maxWidth])
-
-  return { width, isResizing, handleMouseDown }
-}
-
-const useChat = () => {
+export default function CodeEditorWithChat() {
+  const { theme } = useTheme()
+  const { toast } = useToast()
   const { t, i18n } = useTranslation()
+  const editorTheme = theme === 'light' ? 'light' : 'vs-dark'
+  const [chatWidth, setChatWidth] = useState(460)
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeRef = useRef<HTMLDivElement>(null)
+  const [code, setCode] = useState<string>(INITIAL_CODE)
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -94,178 +60,119 @@ const useChat = () => {
       timestamp: new Date(),
     },
   ])
+  const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isSystemAdvancing, setIsSystemAdvancing] = useState(false)
   const [phase, setPhase] = useState<string>(PHASE.HEARING)
+
+  // セッションIDを生成して保持（共通関数使用）
   const sessionIdRef = useRef<string>(generateSessionId())
 
-  const sendMessageToAPI = useCallback(
-    async (message: string): Promise<ChatResponse> => {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionIdRef.current,
-          message,
-          language: i18n.language,
-        }),
-      })
-      if (!response.ok) throw new Error(`API Error: ${response.status}`)
-      return response.json()
-    },
-    [i18n.language],
-  )
+  // 言語変更時のハンドラー
+  const handleLanguageChange = (newLanguage: "ja" | "en") => {
+    i18n.changeLanguage(newLanguage)
+    // 初期メッセージを新しい言語で更新
+    setMessages(prev => {
+      const updatedMessages = [...prev]
+      if (updatedMessages.length > 0 && updatedMessages[0].sender === "assistant") {
+        updatedMessages[0] = {
+          ...updatedMessages[0],
+          content: t("ui.greeting.initial_message")
+        }
+      }
+      return updatedMessages
+    })
+  }
 
-  const appendAssistantMessage = useCallback((response: ChatResponse) => {
+  // Chat API へのメッセージ送信
+  const sendMessageToAPI = async (message: string): Promise<ChatResponse> => {
+    const response = await fetch(`${API_BASE_URL}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        session_id: sessionIdRef.current, 
+        message,
+        language: i18n.language 
+      }),
+    })
+    if (!response.ok) throw new Error(`API Error: ${response.status}`)
+    return response.json()
+  }
+
+  // アシスタント側のメッセージを追加
+  const appendAssistantMessage = (response: ChatResponse) => {
     const aiMessage: Message = {
-      id: `${Date.now()}-${Math.random()}`,
+      id: (Date.now() + Math.random()).toString(),
       content: response.message,
       sender: "assistant",
       timestamp: new Date(),
       bicep_code: response.bicep_code,
     }
-    setMessages((prev) => [...prev, aiMessage])
-  }, [])
+    setMessages(prev => [...prev, aiMessage])
+  }
 
-  const resetConversation = useCallback(async () => {
+  // チャット応答の処理
+  const processChatResponse = (response: ChatResponse) => {
+    appendAssistantMessage(response)
+    if (response.phase) setPhase(response.phase)
+    if (response.bicep_code) setCode(response.bicep_code)
+    // セッションの終了判定
+    const completed = isCompletedPhase(response.phase)
+    if (completed) {
+      setPhase(PHASE.COMPLETED)
+      setIsSystemAdvancing(false)
+      return
+    }
+    // 次回のユーザー入力をスキップするかの判定
+    if (response.requires_user_input) {
+      setIsSystemAdvancing(false)
+    } else {
+      setIsSystemAdvancing(true)
+      setTimeout(() => advanceOneStep(), 800)
+    }
+  }
+
+  // フェーズを一つ進める（ユーザー入力なし）
+  const advanceOneStep = async () => {
+    if (isCompletedPhase(phase)) return
+    try {
+      const resp = await sendMessageToAPI("")
+      processChatResponse(resp)
+    } catch (e) {
+      console.error("Auto advance error", e)
+      setIsSystemAdvancing(false)
+    }
+  }
+
+  // 会話のリセット
+  const resetConversation = async () => {
     try {
       await fetch(`${API_BASE_URL}/reset`, { method: "POST" })
+      // 新しいセッションIDを生成 (共通関数)
       sessionIdRef.current = generateSessionId()
-      setMessages([
-        {
-          id: "1",
-          content: t("ui.greeting.initial_message"),
-          sender: "assistant",
-          timestamp: new Date(),
-        },
-      ])
+      setMessages([{
+        id: "1",
+        content: t("ui.greeting.initial_message"),
+        sender: "assistant",
+        timestamp: new Date(),
+      }])
+      setCode(INITIAL_CODE)
       setPhase(PHASE.HEARING)
       setIsSystemAdvancing(false)
       setIsLoading(false)
     } catch (error) {
       console.error("Failed to reset conversation:", error)
     }
-  }, [t])
-
-  return {
-    messages,
-    setMessages,
-    isLoading,
-    setIsLoading,
-    isSystemAdvancing,
-    setIsSystemAdvancing,
-    phase,
-    setPhase,
-    sendMessageToAPI,
-    appendAssistantMessage,
-    resetConversation,
   }
-}
 
-export default function Home() {
-  const { theme } = useTheme()
-  const { toast } = useToast()
-  const { t, i18n } = useTranslation()
-
-  const {
-    width: chatWidth,
-    isResizing,
-    handleMouseDown,
-  } = useResizable(CHAT_WIDTH_DEFAULT, CHAT_WIDTH_MIN, CHAT_WIDTH_MAX)
-
-  const {
-    messages,
-    setMessages,
-    isLoading,
-    setIsLoading,
-    isSystemAdvancing,
-    setIsSystemAdvancing,
-    phase,
-    setPhase,
-    sendMessageToAPI,
-    appendAssistantMessage,
-    resetConversation,
-  } = useChat()
-
-  const [code, setCode] = useState<string>(INITIAL_CODE)
-  const [inputMessage, setInputMessage] = useState("")
-
-  const editorTheme = useMemo(() => (theme === "light" ? "light" : "vs-dark"), [theme])
-
-  const phaseStatus = useMemo(() => {
-    if (isSystemAdvancing)
-      return {
-        color: "bg-gradient-to-r from-primary to-secondary",
-        animation: "animate-pulse animate-glow",
-        icon: <Zap className="h-3 w-3 text-white" />,
-      }
-    if (isCompletedPhase(phase))
-      return {
-        color: "bg-gradient-to-r from-green-400 to-emerald-500",
-        animation: "animate-float",
-        icon: <Heart className="h-3 w-3 text-white" />,
-      }
-    return {
-      color: "bg-gradient-to-r from-primary to-amber-500",
-      animation: "",
-      icon: <Sparkles className="h-3 w-3 text-white" />,
-    }
-  }, [isSystemAdvancing, phase])
-
-  const handleLanguageChange = useCallback(
-    (newLanguage: "ja" | "en") => {
-      i18n.changeLanguage(newLanguage)
-      setMessages((prev) => {
-        const updatedMessages = [...prev]
-        if (updatedMessages.length > 0 && updatedMessages[0].sender === "assistant") {
-          updatedMessages[0] = {
-            ...updatedMessages[0],
-            content: t("ui.greeting.initial_message"),
-          }
-        }
-        return updatedMessages
-      })
-    },
-    [i18n, t, setMessages],
-  )
-
-  const processChatResponse = useCallback(
-    (response: ChatResponse) => {
-      appendAssistantMessage(response)
-      if (response.phase) setPhase(response.phase)
-      if (response.bicep_code) setCode(response.bicep_code)
-
-      const completed = isCompletedPhase(response.phase)
-      if (completed) {
-        setPhase(PHASE.COMPLETED)
-        setIsSystemAdvancing(false)
-        return
-      }
-
-      if (response.requires_user_input) {
-        setIsSystemAdvancing(false)
-      } else {
-        setIsSystemAdvancing(true)
-        setTimeout(async () => {
-          if (isCompletedPhase(phase)) return
-          try {
-            const resp = await sendMessageToAPI("")
-            processChatResponse(resp)
-          } catch (e) {
-            console.error("Auto advance error", e)
-            setIsSystemAdvancing(false)
-          }
-        }, 800)
-      }
-    },
-    [appendAssistantMessage, setPhase, setCode, setIsSystemAdvancing, phase, sendMessageToAPI],
-  )
-
-  const handleSendMessage = useCallback(async () => {
+  const handleSendMessage = async () => {
+    // 空メッセージや処理中は無視
     if (!inputMessage.trim() || isLoading) return
 
+    // ユーザー介入時は自動進行ループをリセット
     setIsSystemAdvancing(false)
 
+    // メッセージを追加
     const newMessage: Message = {
       id: Date.now().toString(),
       content: inputMessage,
@@ -274,17 +181,17 @@ export default function Home() {
     }
     setMessages((prev) => [...prev, newMessage])
 
+    // フォームをクリアして API へ送信
     const userRequest = inputMessage
     setInputMessage("")
     setIsLoading(true)
-
     try {
       const response = await sendMessageToAPI(userRequest)
       processChatResponse(response)
     } catch (error) {
       console.error("Error sending message:", error)
       const errorResponse: Message = {
-        id: `${Date.now()}-error`,
+        id: (Date.now() + 1).toString(),
         content: `エラーが発生しました。バックエンドサーバーが起動していることを確認してください。`,
         sender: "assistant",
         timestamp: new Date(),
@@ -293,31 +200,20 @@ export default function Home() {
     } finally {
       setIsLoading(false)
     }
-  }, [inputMessage, isLoading, setIsSystemAdvancing, setMessages, setIsLoading, sendMessageToAPI, processChatResponse])
+  }
 
-  const handleKeyPress = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault()
-        handleSendMessage()
-      }
-    },
-    [handleSendMessage],
-  )
-
-  const copyToClipboard = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(code)
-      toast({
-        title: "✨ Copied to clipboard",
-        description: "Your Bicep template is ready to use!",
-      })
-    } catch (error) {
-      console.error("Failed to copy to clipboard:", error)
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
     }
-  }, [code, toast])
+  }
 
-  const downloadBicep = useCallback(() => {
+  // クリップボードにコードをコピー
+  const copyToClipboard = () => navigator.clipboard.writeText(code)
+
+  // Bicep コードを main.bicep としてダウンロード
+  const downloadBicep = () => {
     try {
       const blob = new Blob([code ?? ""], { type: "text/plain;charset=utf-8" })
       const url = URL.createObjectURL(blob)
@@ -331,82 +227,72 @@ export default function Home() {
     } catch (e) {
       console.error("Failed to download bicep file", e)
     }
-  }, [code])
+  }
 
-  const handleRun = useCallback(() => {
+  // Play ボタン (未実装機能の通知)
+  const handleRun = () => {
     toast({
-      title: "🚀 " + t("ui.toast.deploy_not_implemented"),
+      title: t("ui.toast.deploy_not_implemented"),
       description: t("ui.toast.deploy_description"),
       duration: 4000,
     })
-  }, [toast, t])
+  }
+
+  // リサイズ処理
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      const newWidth = e.clientX
+      if (newWidth >= 250 && newWidth <= 600) setChatWidth(newWidth)
+    }
+    const handleMouseUp = () => setIsResizing(false)
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isResizing])
 
   return (
-    <div className="h-screen bg-background text-foreground flex overflow-hidden">
-      <div
-        className="flex flex-col border-r border-border min-w-0 bg-card rounded-r-2xl mr-1"
-        style={{ width: `${chatWidth}px` }}
-      >
-        <div className="h-16 bg-card border-b border-border flex items-center px-6 justify-between rounded-tr-2xl">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className={cn("p-2 rounded-xl", phaseStatus.color, phaseStatus.animation)}>{phaseStatus.icon}</div>
-              <div>
-                <span className="text-sm font-semibold text-foreground">{t("ui.chat.assistant_name")}</span>
-                <Badge
-                  variant="secondary"
-                  className="ml-2 text-xs bg-secondary/20 text-secondary-foreground border-secondary/30"
-                >
-                  {phase}
-                </Badge>
-              </div>
-            </div>
+    <div className="h-screen bg-app text-app flex overflow-hidden">
+      {/* Chat area */}
+      <div className="flex flex-col border-r min-w-0" style={{ width: `${chatWidth}px` }}>
+
+        {/* Message Header */}
+        <div className="h-12 bg-header text-header border-app border-b flex items-center px-4 justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isSystemAdvancing ? "bg-amber-400 animate-pulse" : isCompletedPhase(phase) ? "bg-green-500" : "bg-green-400"}`}></div>
+            <span className="text-sm font-medium">{t("ui.chat.assistant_name")}</span>
+            <span
+              className={`ml-2 text-[10px] px-2 py-0.5 rounded uppercase tracking-wide border border-gray-500`}
+              title={`Phase: ${phase}`}
+            >
+              {phase}
+            </span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={resetConversation}
-            className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
-            title={t("ui.chat.reset_conversation")}
-          >
+          <Button variant="ghost" size="sm" onClick={resetConversation} className="text-muted hover:text-app hover-bg-surface-3" title={t("ui.chat.reset_conversation")}>
             <RotateCcw className="h-4 w-4" />
           </Button>
         </div>
 
-        <ScrollArea className="flex-1 p-6 h-0">
-          <div className="space-y-6">
+        {/* Messages */}
+        <ScrollArea className="flex-1 p-4 overflow-hidden">
+          <div className="space-y-4">
             {messages.map((message) => (
-              <div key={message.id} className={cn("flex", message.sender === "user" ? "justify-end" : "justify-start")}>
-                <div
-                  className={cn(
-                    "max-w-[85%] rounded-2xl px-5 py-4 text-sm whitespace-pre-wrap break-words shadow-sm",
-                    message.sender === "user"
-                      ? "bg-gradient-to-r from-secondary to-secondary/90 text-secondary-foreground ml-4 rounded-br-lg shadow-md"
-                      : "bg-muted/50 text-foreground mr-4 rounded-bl-lg border border-border/50 shadow-md backdrop-blur-sm",
-                  )}
-                >
+              <div key={message.id} className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[90%] sm:max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words overflow-x-auto max-h-[45vh] ${message.sender === "user" ? "text-user-message bg-user-message" : "text-system-message bg-system-message"}`}>
                   {message.content}
                 </div>
               </div>
             ))}
             {(isLoading || isSystemAdvancing) && (
               <div className="flex justify-start">
-                <div className="bg-muted/50 text-muted-foreground rounded-2xl rounded-bl-lg px-5 py-4 text-sm mr-4 border border-border/50 shadow-md backdrop-blur-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="flex gap-1">
-                      <div
-                        className="w-2 h-2 bg-current rounded-full animate-bounce"
-                        style={{ animationDelay: "0ms" }}
-                      />
-                      <div
-                        className="w-2 h-2 bg-current rounded-full animate-bounce"
-                        style={{ animationDelay: "150ms" }}
-                      />
-                      <div
-                        className="w-2 h-2 bg-current rounded-full animate-bounce"
-                        style={{ animationDelay: "300ms" }}
-                      />
-                    </div>
+                <div className="text-system-message bg-system-message rounded-lg px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="animate-pulse"></div>
                     <span>{isSystemAdvancing ? t("ui.chat.auto_processing") : t("ui.chat.thinking")}</span>
                   </div>
                 </div>
@@ -414,118 +300,92 @@ export default function Home() {
             )}
           </div>
         </ScrollArea>
-
-        <Separator className="opacity-30" />
-
-        <div className="p-6 bg-card border-t border-border rounded-br-2xl">
-          <div className="flex gap-3">
+        <Separator className="bg-surface-3" />
+        <div className="p-4">
+          <div className="flex gap-2">
             <Input
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder={
-                isCompletedPhase(phase) ? t("ui.chat.input_placeholder_completed") : t("ui.chat.input_placeholder")
-              }
-              className="flex-1 rounded-xl border-border bg-background focus:ring-2 focus:ring-secondary/20 focus:border-secondary/50"
+              placeholder={isCompletedPhase(phase) ? t("ui.chat.input_placeholder_completed") : t("ui.chat.input_placeholder")}
+              className="flex-1 bg-surface-2 border-app text-app placeholder:text-muted"
               disabled={isLoading || isCompletedPhase(phase)}
             />
-            <Button
-              onClick={handleSendMessage}
-              size="default"
-              disabled={isLoading || isCompletedPhase(phase)}
-              className="rounded-xl bg-gradient-to-r from-secondary to-secondary/90 hover:from-secondary/90 hover:to-secondary shadow-lg hover:shadow-xl transition-all duration-200"
-            >
+            <Button onClick={handleSendMessage} size="default" className="text-button bg-button hover:bg-button-hover hover:text-button-hover" disabled={isLoading || isCompletedPhase(phase)}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
           {isCompletedPhase(phase) && (
-            <p className="text-xs text-muted-foreground mt-3 text-center">{t("ui.chat.completion_notice")}</p>
+            <p className="text-xs text-muted mt-2">
+              {t("ui.chat.completion_notice")}
+            </p>
           )}
         </div>
       </div>
 
-      <div
-        className={cn(
-          "w-1 cursor-col-resize transition-all duration-200 hover:bg-gradient-to-b hover:from-secondary/30 hover:to-secondary/50 hidden md:block",
-          isResizing && "bg-gradient-to-b from-secondary/50 to-secondary/70 w-2",
-        )}
-        onMouseDown={handleMouseDown}
-      />
+      {/* Editor area */}
+      <div ref={resizeRef} className="w-1 cursor-col-resize transition-colors hidden md:block" onMouseDown={() => setIsResizing(true)} />
+        <div className="flex-1 flex flex-col min-w-0">
 
-      <div className="flex-1 flex flex-col min-w-0 rounded-l-2xl ml-1 overflow-hidden">
-        <div className="h-16 bg-yellow-50 dark:bg-card/30 border-b border-yellow-200 dark:border-border/50 flex items-center px-6 gap-4 rounded-tl-2xl border border-yellow-200 dark:border-border/50 border-b-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-r from-secondary/20 to-accent/20">
-              <Code2 className="h-4 w-4 text-secondary" />
+          {/* Editor Header */}
+          <div className="h-12 bg-header text-header border-b border-app flex items-center px-4 gap-2">
+            
+            <FileText className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-medium">{t("ui.editor.filename")}</span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="ghost" size="sm" className="text-muted hover:text-app hover-bg-surface-2" onClick={copyToClipboard} title={t("ui.editor.copy_tooltip")}>
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted hover:text-app hover-bg-surface-2"
+                onClick={downloadBicep}
+                title={t("ui.editor.download_tooltip")}
+              >
+                <Save className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted hover:text-app hover-bg-surface-2"
+                onClick={handleRun}
+                title={t("ui.editor.deploy_tooltip")}
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+              <LanguageToggle 
+                currentLanguage={i18n.language as "ja" | "en"} 
+                onLanguageChange={handleLanguageChange} 
+              />
+              <ThemeToggle />
             </div>
-            <span className="text-sm font-semibold">{t("ui.editor.filename")}</span>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={copyToClipboard}
-              title={t("ui.editor.copy_tooltip")}
-              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={downloadBicep}
-              title={t("ui.editor.download_tooltip")}
-              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
-            >
-              <Save className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRun}
-              title={t("ui.editor.deploy_tooltip")}
-              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
-            >
-              <Play className="h-4 w-4" />
-            </Button>
-            <Separator orientation="vertical" className="h-6 mx-2 opacity-30" />
-            <ThemeToggle />
-            <SettingsDialog onLanguageChange={handleLanguageChange} />
+          {/* Editor Area */}
+          <div className="flex-1 flex min-w-0 overflow-hidden">
+            <div className="flex-1 relative min-w-0 h-full">
+              {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+              {/* @ts-ignore */}
+              <CodeiumEditor
+                value={code}
+                onChange={(value?: string) => setCode(value ?? "")}
+                language={"bicep"}
+                className="h-full w-full p-0 bg-app text-app font-mono text-sm"
+                height={"100%"}
+                theme={editorTheme}
+                  options={{
+                  bracketPairColorization: { enabled: true },
+                  fontSize: 16,
+                  tabSize: 4,
+                  fontFamily: "Consolas",
+                  lineNumbers: "on",
+                  minimap: { enabled: true },
+                }}
+              />
+            </div>
           </div>
         </div>
-
-        <div className="flex-1 flex min-w-0 overflow-hidden bg-yellow-50/30 dark:bg-card/30 rounded-b-2xl border border-yellow-200 dark:border-border/50 border-t-0">
-          <div className="flex-1 relative min-w-0 h-full overflow-hidden bg-yellow-50/20 dark:bg-card/20 rounded-b-2xl">
-            {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-            {/* @ts-ignore */}
-            <CodeiumEditor
-              value={code}
-              onChange={(value?: string) => setCode(value ?? "")}
-              language="bicep"
-              className="h-full w-full rounded-b-2xl"
-              height="100%"
-              theme={editorTheme}
-              options={{
-                bracketPairColorization: { enabled: true },
-                fontSize: 15,
-                tabSize: 2,
-                fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
-                lineNumbers: "on",
-                minimap: { enabled: true },
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                wordWrap: "on",
-                renderWhitespace: "selection",
-                cursorBlinking: "smooth",
-                cursorSmoothCaretAnimation: "on",
-                smoothScrolling: true,
-                padding: { top: 20, bottom: 20 },
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+     </div>
+   )
+ }

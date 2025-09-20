@@ -1,39 +1,61 @@
 "use client"
 
-import { Settings } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { LanguageToggle } from "./language-toggle"
+import React from "react"
 import { useTranslation } from "react-i18next"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Settings } from "lucide-react"
+import { LanguageToggle } from "@/components/language-toggle"
 
 interface SettingsDialogProps {
-  onLanguageChange: (language: "ja" | "en") => void
+  onLanguageChange?: (language: "ja" | "en") => void
 }
 
 export function SettingsDialog({ onLanguageChange }: SettingsDialogProps) {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
+
+  const handleLanguageChange = (newLanguage: "ja" | "en") => {
+    onLanguageChange?.(newLanguage)
+  }
+
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl transition-all duration-200"
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="text-muted hover:text-app hover-bg-surface-2"
+          title={t("ui.editor.settings_tooltip")}
         >
           <Settings className="h-4 w-4" />
-          <span className="sr-only">Settings</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="rounded-2xl border-border/30 bg-card/95 backdrop-blur-sm">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
-            Settings
-          </DialogTitle>
+          <DialogTitle>{t("ui.settings.title")}</DialogTitle>
+          <DialogDescription>
+            {t("ui.settings.description")}
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-6 pt-2">
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30 border border-border/20">
-            <span className="font-medium">Language</span>
-            <LanguageToggle currentLanguage={i18n.language as "ja" | "en"} onLanguageChange={onLanguageChange} />
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="language" className="text-right">
+              {t("ui.settings.language_label")}
+            </Label>
+            <div className="col-span-3">
+              <LanguageToggle 
+                currentLanguage={i18n.language as "ja" | "en"} 
+                onLanguageChange={handleLanguageChange}
+              />
+            </div>
           </div>
         </div>
       </DialogContent>

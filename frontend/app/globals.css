@@ -1,45 +1,53 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Modern light theme inspired by VS Code and GitHub */
-  --background: #ffffff; /* Pure white background like modern apps */
-  --foreground: #24292f; /* Dark text for maximum contrast */
-  --card: #f8f9fa; /* Slightly more visible light gray cards */
-  --card-foreground: #24292f; /* Dark text on cards */
-  --popover: #ffffff; /* White popover backgrounds */
-  --popover-foreground: #24292f; /* Dark text for popover content */
-  --primary: #fd7e14; /* Orange for primary actions */
-  --primary-foreground: #ffffff; /* White text on primary buttons */
-  --secondary: #0969da; /* GitHub blue for user messages */
-  --secondary-foreground: #ffffff; /* White text on secondary buttons */
-  --muted: #e9ecef; /* More visible light gray for muted backgrounds */
-  --muted-foreground: #6c757d; /* Medium gray for muted text */
-  --accent: #0969da; /* GitHub blue for links and highlights */
-  --accent-foreground: #ffffff; /* White text on accent elements */
-  --destructive: #d1242f; /* GitHub red for destructive actions */
-  --destructive-foreground: #ffffff; /* White text on destructive buttons */
-  --border: #ced4da; /* More visible gray borders */
-  --input: #ffffff; /* White input fields with borders */
-  --ring: #0969da; /* Blue focus rings */
-  --chart-1: #4f46e5;
-  --chart-2: #d97706;
-  --chart-3: #f43f5e;
-  --chart-4: #3b82f6;
-  --chart-5: #10b981;
-  --radius: 0.75rem; /* More rounded corners for modern feel */
-  --sidebar: #f6f8fa;
-  --sidebar-foreground: #24292f;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #24292f;
-  --sidebar-accent: #0969da;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #ced4da;
-  --sidebar-ring: #0969da;
-  --editor-header: #fff3cd; /* Light yellow for editor header */
-  --editor-bg: #fefce8; /* Very light yellow for editor background */
+  /* App semantic palette (defaults) */
+  --app-bg: #fffff;
+  --app-text: #000000;
+  --header-bg: oklch(0.975 0 0);
+  --header-text: #000000;
+  --user-message-bg: #a9dcff;
+  --user-message-text: #000000;
+  --system-message-bg: oklch(0.97 0 0);
+  --system-message-text: #000000;
+  --button-bg: #a9dcff;
+  --button-bg-hover: #0065a9;
+  --button-text: oklch(0.2 0 0);
+  --button-text-hover: oklch(0.975 0 0);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
 }
 
 .dark {
@@ -62,7 +70,7 @@
   --destructive-foreground: #1f2937; /* Dark text on destructive buttons */
   --border: #4b5563; /* Medium gray for borders */
   --input: #374151; /* Medium gray for input fields */
-  --ring: #818cf8; /* Blue for focus rings in dark mode */
+  --ring: #f59e0b; /* Brighter amber for focus rings */
   --sidebar: #374151;
   --sidebar-foreground: #f9fafb;
   --sidebar-primary: #4b5563;
@@ -70,9 +78,7 @@
   --sidebar-accent: #818cf8;
   --sidebar-accent-foreground: #1f2937;
   --sidebar-border: #4b5563;
-  --sidebar-ring: #818cf8;
-  --editor-header: #4b5563; /* Medium gray for editor header in dark mode */
-  --editor-bg: #374151; /* Medium gray for editor background in dark mode */
+  --sidebar-ring: #f59e0b;
 }
 
 @theme inline {
