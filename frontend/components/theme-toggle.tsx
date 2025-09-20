@@ -30,7 +30,7 @@ export default function ThemeToggle() {
       variant="ghost"
       size="sm"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
+      className="text-muted hover:text-app hover-bg-surface-2"
       title={isDark ? "Switch to light theme" : "Switch to dark theme"}
     >
       {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
