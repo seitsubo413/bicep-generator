@@ -510,7 +510,8 @@ export default function Home() {
                 bracketPairColorization: { enabled: true },
                 fontSize: 15,
                 tabSize: 2,
-                fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
+                // Force Consolas as primary editor font (fallbacks retained)
+                fontFamily: "Consolas, 'JetBrains Mono', 'Courier New', monospace",
                 lineNumbers: "on",
                 minimap: { enabled: true },
                 scrollBeyondLastLine: false,
